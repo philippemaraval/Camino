@@ -2359,7 +2359,80 @@ function handleStreetClick(clickedFeature, clickedLayer, event) {
       }, 2000);
     }
 
-    // Send guess to server
+    // ── 1. Enregistrer la tentative LOCALEMENT (avant même d'appeler le serveur) ──
+    dailyGuessHistory.push({
+      streetName: clickedFeature.properties.name,
+      distance: Math.round(distance),
+      arrow
+    });
+    saveDailyGuessesToStorage();
+
+    const localAttempts = dailyGuessHistory.length;
+    const localRemaining = 7 - localAttempts;
+
+    // ── 2. Fin de partie côté client (immédiat, pas besoin du serveur) ──
+    if (isSuccess) {
+      // === VICTOIRE ===
+      window._dailyGameOver = true;
+      isSessionRunning = false;
+      showMessage(`🎉 BRAVO ! Trouvé en ${localAttempts} essai${localAttempts > 1 ? 's' : ''} !`, 'success');
+      renderDailyGuessHistory({ success: true, attempts: localAttempts });
+
+      const titleEl = document.getElementById('target-panel-title');
+      if (titleEl) titleEl.textContent = '🎉 Défi réussi !';
+
+      const restartBtn = document.getElementById('restart-btn');
+      if (restartBtn) {
+        restartBtn.textContent = 'Commencer la session';
+        restartBtn.classList.remove('btn-stop');
+        restartBtn.classList.add('btn-primary');
+      }
+
+      // Mettre en évidence la rue cible sur la carte
+      const targetNameNorm = normalizeName(dailyTargetData.streetName);
+      const targetFeature = allStreetFeatures.find(f => f.properties && normalizeName(f.properties.name) === targetNameNorm);
+      if (targetFeature && targetFeature.geometry) {
+        highlightDailyTarget(targetFeature.geometry, true);
+      }
+
+    } else if (localRemaining <= 0) {
+      // === ÉCHEC : 7 essais épuisés ===
+      window._dailyGameOver = true;
+      isSessionRunning = false;
+      showMessage(`❌ Dommage ! C'était « ${dailyTargetData.streetName} ». Fin du défi.`, 'error');
+      renderDailyGuessHistory({ success: false });
+
+      const titleEl = document.getElementById('target-panel-title');
+      if (titleEl) titleEl.textContent = '❌ Défi échoué';
+
+      const restartBtn = document.getElementById('restart-btn');
+      if (restartBtn) {
+        restartBtn.textContent = 'Commencer la session';
+        restartBtn.classList.remove('btn-stop');
+        restartBtn.classList.add('btn-primary');
+      }
+
+      // Mettre en évidence la rue cible sur la carte
+      const targetNameNorm = normalizeName(dailyTargetData.streetName);
+      const targetFeature = allStreetFeatures.find(f => f.properties && normalizeName(f.properties.name) === targetNameNorm);
+      if (targetFeature && targetFeature.geometry) {
+        highlightDailyTarget(targetFeature.geometry, false);
+      }
+
+    } else {
+      // === Essai raté, encore des essais restants ===
+      renderDailyGuessHistory();
+      const distStr = distance >= 1000
+        ? `${(distance / 1000).toFixed(1)} km`
+        : `${Math.round(distance)} m`;
+      showMessage(`❌ Raté ! Distance : ${distStr}. Plus que ${localRemaining} essai${localRemaining > 1 ? 's' : ''}.`, 'warning');
+    }
+
+    updateDailyUI();
+    updateStartStopButton();
+    updateLayoutSessionState();
+
+    // ── 3. Synchroniser avec le serveur EN ARRIÈRE-PLAN (non bloquant) ──
     fetch(API_URL + '/api/daily/guess', {
       method: 'POST',
       headers: {
@@ -2372,64 +2445,15 @@ function handleStreetClick(clickedFeature, clickedLayer, event) {
         isSuccess
       })
     }).then(r => r.json()).then(result => {
-      // 1. Enregistrer la tentative dans l'historique local
-      dailyGuessHistory.push({
-        streetName: clickedFeature.properties.name,
-        distance: Math.round(distance),
-        arrow
-      });
-      saveDailyGuessesToStorage();
-
-      // 2. Mettre à jour le statut global
+      // Mettre à jour le statut serveur local (pour la prochaine visite)
       dailyTargetData.userStatus = result;
-      const attempts = result.attempts_count;
-      const remaining = 7 - attempts;
 
-      if (result.success) {
-        // === FIN DE PARTIE : VICTOIRE ===
-        window._dailyGameOver = true;
-        isSessionRunning = false;
-        showMessage(`🎉 BRAVO ! Trouvé en ${attempts} essai${attempts > 1 ? 's' : ''} !`, 'success');
-        renderDailyGuessHistory({ success: true, attempts });
-        highlightDailyTarget(result.targetGeometry, true);
-        const titleEl = document.getElementById('target-panel-title');
-        if (titleEl) titleEl.textContent = '🎉 Défi réussi !';
-        // Remettre le bouton en mode "Commencer"
-        const restartBtn = document.getElementById('restart-btn');
-        if (restartBtn) {
-          restartBtn.textContent = 'Commencer la session';
-          restartBtn.classList.remove('btn-stop');
-          restartBtn.classList.add('btn-primary');
-        }
-      } else if (remaining <= 0) {
-        // === FIN DE PARTIE : ÉCHEC (7 essais épuisés) ===
-        window._dailyGameOver = true;
-        isSessionRunning = false;
-        renderDailyGuessHistory({ success: false });
-        showMessage(`❌ Dommage ! C'était « ${dailyTargetData.streetName} ». Fin du défi.`, 'error');
-        highlightDailyTarget(result.targetGeometry, false);
-        const titleEl = document.getElementById('target-panel-title');
-        if (titleEl) titleEl.textContent = '❌ Défi échoué';
-        // Remettre le bouton en mode "Commencer"
-        const restartBtn = document.getElementById('restart-btn');
-        if (restartBtn) {
-          restartBtn.textContent = 'Commencer la session';
-          restartBtn.classList.remove('btn-stop');
-          restartBtn.classList.add('btn-primary');
-        }
-      } else {
-        renderDailyGuessHistory();
-        const distStr = distance >= 1000
-          ? `${(distance / 1000).toFixed(1)} km`
-          : `${Math.round(distance)} m`;
-        showMessage(`❌ Raté ! Distance : ${distStr}. Plus que ${remaining} essai${remaining > 1 ? 's' : ''}.`, 'warning');
+      // Si le serveur renvoie la géométrie cible, la surligner (si pas déjà fait)
+      if (result.targetGeometry && (result.success || result.attempts_count >= 7)) {
+        highlightDailyTarget(result.targetGeometry, !!result.success);
       }
-      updateDailyUI();
-      updateStartStopButton();
-      updateLayoutSessionState();
     }).catch(err => {
-      console.error('Daily guess error:', err);
-      showMessage('Erreur de connexion. Réessayez.', 'error');
+      console.warn('Daily sync error (non-bloquant):', err);
     }).finally(() => {
       window._dailyGuessInFlight = false;
     });
@@ -3817,7 +3841,8 @@ function computeFeatureCentroid(feature) {
 
 function updateDailyUI() {
   const status = dailyTargetData ? dailyTargetData.userStatus : {};
-  const attempts = status.attempts_count || 0;
+  // Utiliser le max entre le compteur local et celui du serveur
+  const attempts = Math.max(dailyGuessHistory.length, status.attempts_count || 0);
   const remaining = 7 - attempts;
 
   if (isDailyMode) {
