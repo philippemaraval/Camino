@@ -671,6 +671,28 @@ function initUI() {
     }
   }
 
+  // ── JS-powered tooltips (escape stacking contexts) ──
+  (function initTooltips() {
+    const popup = document.createElement('div');
+    popup.className = 'tooltip-popup';
+    document.body.appendChild(popup);
+
+    document.querySelectorAll('.tooltip-icon[data-tooltip]').forEach(icon => {
+      icon.addEventListener('mouseenter', () => {
+        const text = icon.getAttribute('data-tooltip');
+        if (!text) return;
+        popup.textContent = text;
+        const rect = icon.getBoundingClientRect();
+        popup.style.top = (rect.top - popup.offsetHeight - 8) + 'px';
+        popup.style.left = rect.left + 'px';
+        popup.classList.add('visible');
+      });
+      icon.addEventListener('mouseleave', () => {
+        popup.classList.remove('visible');
+      });
+    });
+  })();
+
   // ── Offline / network error detection ──
   function updateOfflineBanner(offline) {
     const banner = document.getElementById('offline-banner');
