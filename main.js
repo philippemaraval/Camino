@@ -3213,6 +3213,51 @@ function updateUserUI() {
 
 // ── Player Profile ──
 
+// ── Badges / Succès ──
+
+const BADGE_DEFINITIONS = [
+  // Progression générale
+  { id: 'first_game', emoji: '🎮', name: 'Première Partie', desc: 'Terminer une session', check: d => (parseInt(d.overall?.total_games) || 0) >= 1 },
+  { id: 'games_10', emoji: '🔟', name: '10 Parties', desc: 'Jouer 10 sessions', check: d => (parseInt(d.overall?.total_games) || 0) >= 10 },
+  { id: 'games_50', emoji: '💯', name: 'Habitué', desc: 'Jouer 50 sessions', check: d => (parseInt(d.overall?.total_games) || 0) >= 50 },
+  { id: 'games_100', emoji: '💎', name: 'Vétéran', desc: 'Jouer 100 sessions', check: d => (parseInt(d.overall?.total_games) || 0) >= 100 },
+  // Titres
+  { id: 'minot', emoji: '🧒', name: 'Minot', desc: 'Atteindre le titre Minot', check: d => (parseFloat(d.overall?.best_score) || 0) >= 20 },
+  { id: 'habitue', emoji: '⚓', name: 'Habitué du Vieux-Port', desc: 'Atteindre le titre Habitué', check: d => (parseFloat(d.overall?.best_score) || 0) >= 40 },
+  { id: 'vrai', emoji: '💪', name: 'Vrai Marseillais', desc: 'Atteindre le titre Vrai Marseillais', check: d => (parseFloat(d.overall?.best_score) || 0) >= 60 },
+  { id: 'maire', emoji: '🏛️', name: 'Maire de la Ville', desc: 'Atteindre le titre Maire', check: d => (parseFloat(d.overall?.best_score) || 0) >= 85 },
+  // Zones
+  { id: 'celebres', emoji: '⭐', name: 'Étoile de la Caneb', desc: 'Jouer en Rues Célèbres', check: d => (d.modes || []).some(m => m.mode === 'rues-celebres') },
+  { id: 'ville', emoji: '🏙️', name: 'Explorateur', desc: 'Jouer en Ville Entière', check: d => (d.modes || []).some(m => m.mode === 'ville') },
+  { id: 'monuments', emoji: '🗿', name: 'Touriste Culturel', desc: 'Jouer en mode Monuments', check: d => (d.modes || []).some(m => m.mode === 'monuments') },
+  {
+    id: 'all_zones', emoji: '🧭', name: 'Globe-trotter', desc: 'Jouer dans chaque zone', check: d => {
+      const zones = new Set((d.modes || []).map(m => m.mode));
+      return ['ville', 'quartier', 'rues-principales', 'rues-celebres', 'monuments'].every(z => zones.has(z));
+    }
+  },
+  // Daily Challenge
+  { id: 'daily_first', emoji: '📅', name: 'Premier Daily', desc: 'Réussir un Daily Challenge', check: d => (parseInt(d.daily?.successes) || 0) >= 1 },
+  { id: 'daily_5', emoji: '🔥', name: 'Série de 5', desc: '5 Daily Challenges réussis', check: d => (parseInt(d.daily?.successes) || 0) >= 5 },
+  { id: 'daily_10', emoji: '⚡', name: 'Série de 10', desc: '10 Daily Challenges réussis', check: d => (parseInt(d.daily?.successes) || 0) >= 10 },
+  { id: 'daily_30', emoji: '🏆', name: 'Champion du Mois', desc: '30 Daily Challenges réussis', check: d => (parseInt(d.daily?.successes) || 0) >= 30 },
+  // Performances
+  { id: 'perfect', emoji: '🎯', name: 'Sans Faute', desc: 'Score de 100 dans une session', check: d => (parseFloat(d.overall?.best_score) || 0) >= 100 },
+  {
+    id: 'multi_mode', emoji: '🌟', name: 'Polyvalent', desc: 'Jouer dans 3 modes de jeu différents', check: d => {
+      const types = new Set((d.modes || []).map(m => m.game_type));
+      return types.size >= 3;
+    }
+  },
+];
+
+function computeBadges(profileData) {
+  return BADGE_DEFINITIONS.map(badge => ({
+    ...badge,
+    unlocked: badge.check(profileData)
+  }));
+}
+
 function loadProfile() {
   if (!currentUser || !currentUser.token) return;
 
@@ -3297,6 +3342,27 @@ function loadProfile() {
             <span>📅 Daily : ${dailyAvgAttempts} essais en moyenne</span>
           </div>`;
       }
+
+      // Badges
+      const badges = computeBadges(data);
+      const unlocked = badges.filter(b => b.unlocked);
+      const locked = badges.filter(b => !b.unlocked);
+
+      html += `<div class="profile-badges-title">Succès (${unlocked.length}/${badges.length})</div>`;
+      html += '<div class="profile-badges-grid">';
+      unlocked.forEach(b => {
+        html += `<div class="profile-badge unlocked" title="${b.name}: ${b.desc}">
+          <span class="badge-emoji">${b.emoji}</span>
+          <span class="badge-name">${b.name}</span>
+        </div>`;
+      });
+      locked.forEach(b => {
+        html += `<div class="profile-badge locked" title="${b.desc}">
+          <span class="badge-emoji">🔒</span>
+          <span class="badge-name">${b.name}</span>
+        </div>`;
+      });
+      html += '</div>';
 
       html += `<div class="profile-member-since">Membre depuis le ${memberSince}</div>`;
 
