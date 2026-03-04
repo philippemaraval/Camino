@@ -453,7 +453,7 @@ function initMap() {
     const miniMap = new L.Control.MiniMap(miniMapTiles, {
       position: 'bottomright',
       toggleDisplay: true,
-      minimized: false,
+      minimized: IS_TOUCH_DEVICE,
       width: 150,
       height: 150,
       zoomLevelOffset: -5,
@@ -737,10 +737,16 @@ function initUI() {
       if (streetsLayer && streetLayersById.size) {
         streetLayersById.forEach(layer => {
           const base = getBaseStreetStyle(layer);
+          const isVisible = base.weight > 0;
           layer.setStyle({
             color: base.color,
             weight: base.weight
           });
+          // Mettre à jour l'interactivité (fix: rues hors quartier cliquables)
+          layer.options.interactive = isVisible;
+          if (layer.touchBuffer) {
+            layer.touchBuffer.options.interactive = isVisible;
+          }
         });
       }
     });
@@ -3231,6 +3237,15 @@ function sendScoreToServer(payload) {
 }
 
 // --- Labels français ---
+// ── Titre du joueur en fonction du score ──
+function getPlayerTitle(score) {
+  if (score >= 85) return '🏛️ Maire de la Ville';
+  if (score >= 60) return '💪 Vrai Marseillais';
+  if (score >= 40) return '⚓ Habitué du Vieux-Port';
+  if (score >= 20) return '🧒 Minot';
+  return '🧳 Touriste';
+}
+
 const ZONE_LABELS = {
   'ville': 'Ville entière',
   'rues-principales': 'Rues principales',
@@ -3299,7 +3314,10 @@ function loadAllLeaderboards() {
         const tbody = document.createElement('tbody');
         rows.forEach((r, i) => {
           const tr = document.createElement('tr');
-          let html = `<td>${i + 1}</td><td>${r.username || 'Anonyme'}</td>`;
+          const medal = i === 0 ? '🥇 ' : i === 1 ? '🥈 ' : i === 2 ? '🥉 ' : '';
+          const rank = medal || `${i + 1}`;
+          const title = getPlayerTitle(r.high_score || 0);
+          let html = `<td>${rank}</td><td>${r.username || 'Anonyme'}<br><small style="color:#94a3b8;font-size:10px">${title}</small></td>`;
           html += `<td>${typeof r.high_score === 'number' ? r.high_score.toFixed(1) : '-'}</td>`;
 
           if (gameType === 'marathon') {
