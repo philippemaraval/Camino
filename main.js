@@ -3237,13 +3237,28 @@ function sendScoreToServer(payload) {
 }
 
 // --- Labels français ---
-// ── Titre du joueur en fonction du score ──
-function getPlayerTitle(score) {
-  if (score >= 85) return '🏛️ Maire de la Ville';
-  if (score >= 60) return '💪 Vrai Marseillais';
-  if (score >= 40) return '⚓ Habitué du Vieux-Port';
-  if (score >= 20) return '🧒 Minot';
-  return '🧳 Touriste';
+// ── Titre du joueur en fonction du score et du mode ──
+const TITLE_THRESHOLDS = {
+  'rues-celebres': [95, 70, 50, 30],
+  'rues-principales': [90, 65, 45, 25],
+  'quartier': [85, 60, 40, 20],
+  'ville': [75, 50, 30, 10],
+  'monuments': [85, 60, 40, 20]
+};
+const TITLE_NAMES = [
+  '🏛️ Maire de la Ville',
+  '💪 Vrai Marseillais',
+  '⚓ Habitué du Vieux-Port',
+  '🧒 Minot',
+  '🧳 Touriste'
+];
+function getPlayerTitle(score, mode) {
+  const t = TITLE_THRESHOLDS[mode] || TITLE_THRESHOLDS['quartier'];
+  if (score >= t[0]) return TITLE_NAMES[0];
+  if (score >= t[1]) return TITLE_NAMES[1];
+  if (score >= t[2]) return TITLE_NAMES[2];
+  if (score >= t[3]) return TITLE_NAMES[3];
+  return TITLE_NAMES[4];
 }
 
 const ZONE_LABELS = {
@@ -3316,7 +3331,7 @@ function loadAllLeaderboards() {
           const tr = document.createElement('tr');
           const medal = i === 0 ? '🥇 ' : i === 1 ? '🥈 ' : i === 2 ? '🥉 ' : '';
           const rank = medal || `${i + 1}`;
-          const title = getPlayerTitle(r.high_score || 0);
+          const title = getPlayerTitle(r.high_score || 0, mode);
           let html = `<td>${rank}</td><td>${r.username || 'Anonyme'}<br><small style="color:#94a3b8;font-size:10px">${title}</small></td>`;
           html += `<td>${typeof r.high_score === 'number' ? r.high_score.toFixed(1) : '-'}</td>`;
 
