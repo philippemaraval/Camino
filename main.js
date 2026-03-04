@@ -3660,7 +3660,7 @@ function handleDailyShare(finalResult) {
     }
   });
 
-  text += `\ncamino5.netlify.app`;
+  text += `\nmarseille-camino6.netlify.app`;
 
   // clipboard API
   if (navigator.clipboard && window.isSecureContext) {
