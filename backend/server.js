@@ -132,6 +132,33 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
 });
 
 // ----------------------
+// Analytics Routes
+// ----------------------
+
+app.post('/api/analytics/track', async (req, res) => {
+    const { streetName, mode, correct, timeSec } = req.body;
+    if (!streetName || !mode) return res.status(400).json({ error: 'Missing data' });
+    try {
+        await db.trackStreetAnswer(streetName, mode, !!correct, timeSec || 0);
+        res.json({ ok: true });
+    } catch (err) {
+        // Fire-and-forget: don't crash on analytics errors
+        console.warn('Analytics track error:', err.message);
+        res.json({ ok: true });
+    }
+});
+
+app.get('/api/analytics', async (req, res) => {
+    try {
+        const data = await db.getAnalytics();
+        res.json(data);
+    } catch (err) {
+        console.error('Analytics error:', err);
+        res.status(500).json({ error: 'Failed to load analytics' });
+    }
+});
+
+// ----------------------
 // Daily Challenge Routes
 // ----------------------
 

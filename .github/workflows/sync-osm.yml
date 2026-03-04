@@ -1,0 +1,54 @@
+name: Sync OSM Streets
+
+on:
+  schedule:
+    # Every Monday at 6:00 UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run OSM sync
+        run: node scripts/sync_osm.js
+
+      - name: Check for changes
+        id: check
+        run: |
+          if git diff --quiet data/ backend/data/; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No street data changes detected."
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            ADDED=$(git diff --stat data/marseille_rues_light.geojson | tail -1)
+            echo "diff_summary=$ADDED" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Pull Request
+        if: steps.check.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: 'sync: update street data from OSM'
+          title: '🗺️ Weekly OSM Street Sync'
+          body: |
+            Automated weekly sync of Marseille street data from OpenStreetMap.
+
+            **Changes:** ${{ steps.check.outputs.diff_summary }}
+
+            This PR was created automatically by the `sync-osm` GitHub Action.
+          branch: osm-sync-auto
+          delete-branch: true
+          labels: osm-sync

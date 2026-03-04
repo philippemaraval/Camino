@@ -71,6 +71,18 @@ async function initDb() {
       try { await client.query(sql); } catch (e) { /* already exists */ }
     }
 
+    // Analytics table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS analytics_streets (
+        street_name TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        correct_count INTEGER DEFAULT 0,
+        wrong_count INTEGER DEFAULT 0,
+        total_time_sec REAL DEFAULT 0,
+        PRIMARY KEY (street_name, mode)
+      )
+    `);
+
     console.log('Database initialized successfully.');
   } finally {
     client.release();
@@ -275,6 +287,64 @@ async function getUserStats(userId) {
   };
 }
 
+// ── Analytics ──
+
+async function trackStreetAnswer(streetName, mode, correct, timeSec) {
+  const col = correct ? 'correct_count' : 'wrong_count';
+  await pool.query(
+    `INSERT INTO analytics_streets (street_name, mode, ${col}, total_time_sec)
+     VALUES ($1, $2, 1, $3)
+     ON CONFLICT (street_name, mode) DO UPDATE SET
+       ${col} = analytics_streets.${col} + 1,
+       total_time_sec = analytics_streets.total_time_sec + $3`,
+    [streetName.toLowerCase().trim(), mode, timeSec || 0]
+  );
+}
+
+async function getAnalytics(limit = 20) {
+  // Hardest streets (lowest success rate, min 5 answers)
+  const hardest = await pool.query(
+    `SELECT street_name, mode,
+            correct_count, wrong_count,
+            (correct_count + wrong_count) as total,
+            ROUND((correct_count * 100.0 / NULLIF(correct_count + wrong_count, 0))::numeric, 1) as success_rate,
+            ROUND((total_time_sec / NULLIF(correct_count, 0))::numeric, 1) as avg_time_sec
+     FROM analytics_streets
+     WHERE (correct_count + wrong_count) >= 5
+     ORDER BY success_rate ASC
+     LIMIT $1`,
+    [limit]
+  );
+
+  // Easiest streets
+  const easiest = await pool.query(
+    `SELECT street_name, mode,
+            correct_count, wrong_count,
+            (correct_count + wrong_count) as total,
+            ROUND((correct_count * 100.0 / NULLIF(correct_count + wrong_count, 0))::numeric, 1) as success_rate,
+            ROUND((total_time_sec / NULLIF(correct_count, 0))::numeric, 1) as avg_time_sec
+     FROM analytics_streets
+     WHERE (correct_count + wrong_count) >= 5
+     ORDER BY success_rate DESC
+     LIMIT $1`,
+    [limit]
+  );
+
+  // Overall stats
+  const overall = await pool.query(
+    `SELECT COUNT(DISTINCT street_name) as unique_streets,
+            SUM(correct_count + wrong_count) as total_answers,
+            ROUND(AVG(correct_count * 100.0 / NULLIF(correct_count + wrong_count, 0))::numeric, 1) as avg_success_rate
+     FROM analytics_streets`
+  );
+
+  return {
+    hardest: hardest.rows,
+    easiest: easiest.rows,
+    overall: overall.rows[0] || {}
+  };
+}
+
 module.exports = {
   initDb,
   createUser,
@@ -288,5 +358,7 @@ module.exports = {
   getDailyUserStatus,
   updateDailyUserAttempt,
   getDailyLeaderboard,
-  getUserStats
+  getUserStats,
+  trackStreetAnswer,
+  getAnalytics
 };

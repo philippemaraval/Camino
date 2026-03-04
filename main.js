@@ -1199,7 +1199,8 @@ function addTouchBufferForLayer(baseLayer) {
 }
 
 function loadStreets() {
-  fetch('data/marseille_rues_light.geojson?v=2')
+  const loadStart = performance.now();
+  fetch('data/marseille_rues_light.geojson?v=3')
     .then(response => {
       if (!response.ok) {
         throw new Error('Erreur HTTP ' + response.status);
@@ -1209,7 +1210,8 @@ function loadStreets() {
     .then(data => {
       // Light GeoJSON: already filtered & trimmed by strip_geojson.py
       allStreetFeatures = data.features || [];
-      console.log('Nombre de rues chargées :', allStreetFeatures.length);
+      const loadMs = (performance.now() - loadStart).toFixed(0);
+      console.log(`Rues chargées : ${allStreetFeatures.length} en ${loadMs}ms`);
 
       streetLayersById.clear();
       streetLayersByName.clear();
@@ -2598,6 +2600,9 @@ function handleStreetClick(clickedFeature, clickedLayer, event) {
     time: streetTimeSec.toFixed(1)
   });
 
+  // Analytics tracking (fire-and-forget)
+  trackAnswer(currentTarget.properties.name, getZoneMode(), isCorrect, streetTimeSec);
+
   updateScoreUI();
 
   // Infos historiques pour rues principales
@@ -2678,6 +2683,9 @@ function handleMonumentClick(clickedFeature, clickedLayer) {
     time: itemTimeSec.toFixed(1)
   });
 
+  // Analytics tracking (fire-and-forget)
+  trackAnswer(answeredName, 'monuments', isCorrect, itemTimeSec);
+
   updateScoreUI();
 
   if (!isCorrect && gameMode === 'marathon' && errorsCount >= MAX_ERRORS_MARATHON) {
@@ -2755,6 +2763,17 @@ function showStreetInfo(feature) {
 // ------------------------
 // Surbrillance de la rue cible
 // ------------------------
+
+// ── Analytics tracking (fire-and-forget) ──
+
+function trackAnswer(streetName, mode, correct, timeSec) {
+  if (!streetName) return;
+  fetch(API_URL + '/api/analytics/track', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ streetName, mode, correct, timeSec })
+  }).catch(() => { }); // silent fail
+}
 
 // ── Feedback animations ──
 
