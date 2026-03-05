@@ -27,10 +27,6 @@ jsFiles.forEach(file => {
     try {
         execSync(`npx terser "${src}" --compress --mangle --output "${src}.min"`, { cwd: ROOT });
         const sizeAfter = fileSize(src + '.min');
-        // Replace original with minified
-        fs.copyFileSync(src + '.min', src);
-        fs.unlinkSync(src + '.min');
-        console.log(`  ✅ ${file}: ${sizeBefore} → ${sizeAfter}`);
     } catch (e) {
         console.error(`  ❌ ${file}: minification failed`, e.message);
     }
@@ -45,9 +41,7 @@ cssFiles.forEach(file => {
     try {
         execSync(`npx cleancss -o "${src}.min" "${src}"`, { cwd: ROOT });
         const sizeAfter = fileSize(src + '.min');
-        fs.copyFileSync(src + '.min', src);
-        fs.unlinkSync(src + '.min');
-        console.log(`  ✅ ${file}: ${sizeBefore} → ${sizeAfter}`);
+        console.log(`  ✅ ${file}: ${sizeBefore} → ${sizeAfter} (saved as .min)`);
     } catch (e) {
         console.error(`  ❌ ${file}: minification failed`, e.message);
     }

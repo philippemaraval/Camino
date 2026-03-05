@@ -15,6 +15,7 @@ const allowedOrigins = [
     'https://camino4.netlify.app',
     'https://camino5.netlify.app',
     'https://marseille-camino6.netlify.app',
+    'https://camino7.netlify.app',
     process.env.FRONTEND_URL
 ].filter(Boolean);
 
