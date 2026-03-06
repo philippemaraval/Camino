@@ -1060,8 +1060,8 @@ button {
 
   body.session-running #sidebar {
     flex: 0 0 auto;
-    max-height: 220px;
-    overflow-y: auto;
+    max-height: 200px;
+    overflow-y: auto !important;
     -webkit-overflow-scrolling: touch;
     padding: 8px 12px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);

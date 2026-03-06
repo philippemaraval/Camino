@@ -3080,25 +3080,29 @@ function renderDailyGuessHistory(e) {
         (r +=
           '<p class="daily-share-hint">L\'image est plus impactante sur les réseaux !</p>'));
     }
-    if (t) {
-      t.innerHTML = r;
+    const historyContainer = document.getElementById("daily-guesses-history");
+    if (historyContainer) {
+      historyContainer.innerHTML = r;
       if (e) {
-        const t = document.getElementById("daily-share-text"),
-          r = document.getElementById("daily-share-image");
-        if (t) t.onclick = () => handleDailyShareText(e);
-        if (r) r.onclick = () => handleDailyShareImage(e);
+        const shareTextBtn = document.getElementById("daily-share-text"),
+          shareImageBtn = document.getElementById("daily-share-image");
+        if (shareTextBtn) shareTextBtn.onclick = () => handleDailyShareText(e);
+        if (shareImageBtn) shareImageBtn.onclick = () => handleDailyShareImage(e);
       }
     }
     if (window.innerWidth <= 900) {
-      const e = document.getElementById("sidebar");
-      if (e) {
+      const sidebarElement = document.getElementById("sidebar");
+      if (sidebarElement) {
         setTimeout(() => {
-          e.scrollTo({ top: e.scrollHeight, behavior: "smooth" });
+          sidebarElement.scrollTo({
+            top: sidebarElement.scrollHeight,
+            behavior: "smooth",
+          });
         }, 150);
       }
     }
-  } catch (e) {
-    console.error("Error in renderDailyGuessHistory:", e);
+  } catch (err) {
+    console.error("Error in renderDailyGuessHistory:", err);
   }
 }
 function handleDailyShareText(e) {
