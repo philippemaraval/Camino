@@ -1095,7 +1095,8 @@ button {
     border-left-width: 4px;
     border-radius: var(--radius-sm);
     max-height: 140px;
-    overflow-y: auto;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
     -webkit-overflow-scrolling: touch;
   }
 
