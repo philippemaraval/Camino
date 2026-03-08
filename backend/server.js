@@ -295,17 +295,16 @@ app.post('/api/admin/clean-leaderboard', async (req, res) => {
 
         const client = await pool.connect();
         
-        const res1 = await client.query(`DELETE FROM scores WHERE quartier_name = 'HORS QUARTIER'`);
-        const res2 = await client.query(`DELETE FROM scores WHERE username IN ('MGM', 'MPhil12') AND quartier_name IS NULL`);
+        // Delete ALL scores from the leaderboard
+        const res = await client.query(`DELETE FROM scores`);
         
         client.release();
         await pool.end();
 
         res.json({
             success: true,
-            removed_hors_quartier: res1.rowCount,
-            removed_orphans: res2.rowCount,
-            message: 'Nettoyage terminé avec succès.'
+            removed_scores: res.rowCount,
+            message: 'Nettoyage terminé avec succès. Tous les scores ont été supprimés.'
         });
     } catch (err) {
         console.error('Erreur lors du nettoyage API:', err);
