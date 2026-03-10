@@ -278,8 +278,25 @@ function setMapStatus(e, t) {
 const IS_TOUCH_DEVICE =
   "ontouchstart" in window || navigator.maxTouchPoints > 0;
 const PULL_TO_REFRESH_THRESHOLD_PX = 92;
-const PULL_TO_REFRESH_TOP_ZONE_PX = 88;
+const PULL_TO_REFRESH_TOP_ZONE_PX = 96;
+const PULL_TO_REFRESH_TOP_ZONE_STANDALONE_PX = 220;
 let isPullToRefreshBound = !1;
+
+function isStandaloneDisplayMode() {
+  if (window.navigator.standalone === !0) return !0;
+  if ("function" != typeof window.matchMedia) return !1;
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    window.matchMedia("(display-mode: fullscreen)").matches ||
+    window.matchMedia("(display-mode: minimal-ui)").matches
+  );
+}
+
+function getPullToRefreshTopZonePx() {
+  return isStandaloneDisplayMode()
+    ? PULL_TO_REFRESH_TOP_ZONE_STANDALONE_PX
+    : PULL_TO_REFRESH_TOP_ZONE_PX;
+}
 
 function getScrollableAncestor(e) {
   let t = e instanceof Element ? e : null;
@@ -294,9 +311,16 @@ function getScrollableAncestor(e) {
 }
 
 function canStartPullToRefresh(e, t) {
-  if (t > PULL_TO_REFRESH_TOP_ZONE_PX) return !1;
-  const r = getScrollableAncestor(e);
-  return !(r && r.scrollTop > 0);
+  if (t > getPullToRefreshTopZonePx()) return !1;
+  const r =
+    window.scrollY ||
+    window.pageYOffset ||
+    document.documentElement.scrollTop ||
+    document.body.scrollTop ||
+    0;
+  if (r > 2) return !1;
+  const a = getScrollableAncestor(e);
+  return !(a && a.scrollTop > 0);
 }
 
 function initMobilePullToRefresh() {
@@ -341,7 +365,7 @@ function initMobilePullToRefresh() {
         reloaded: !1,
       };
     },
-    { passive: !0 },
+    { passive: !0, capture: !0 },
   );
   document.addEventListener(
     "touchmove",
@@ -356,23 +380,27 @@ function initMobilePullToRefresh() {
         return void (e.eligible = !1);
       a > e.maxPull && (e.maxPull = a);
     },
-    { passive: !0 },
+    { passive: !0, capture: !0 },
   );
-  const r = () => {
+  const r = (n) => {
+    if (n.changedTouches && 1 === n.changedTouches.length) {
+      const t = n.changedTouches[0];
+      ((e.lastX = t.clientX), (e.lastY = t.clientY));
+    }
     if (!e.active || !e.eligible || e.reloaded) return void t();
-    const r = Math.max(e.maxPull, e.lastY - e.startY),
-      a = Math.abs(e.lastX - e.startX);
-    if (r >= PULL_TO_REFRESH_THRESHOLD_PX && r > 1.35 * a) {
+    const a = Math.max(e.maxPull, e.lastY - e.startY),
+      s = Math.abs(e.lastX - e.startX);
+    if (a >= PULL_TO_REFRESH_THRESHOLD_PX && a > 1.35 * s) {
       ((e.reloaded = !0),
         showMessage("Rafraîchissement...", "info"),
         triggerHaptic('click'),
-        window.location.reload());
+        setTimeout(() => window.location.reload(), 40));
       return;
     }
     t();
   };
-  (document.addEventListener("touchend", r, { passive: !0 }),
-    document.addEventListener("touchcancel", t, { passive: !0 }));
+  (document.addEventListener("touchend", r, { passive: !0, capture: !0 }),
+    document.addEventListener("touchcancel", t, { passive: !0, capture: !0 }));
 }
 
 function getSelectedQuartier() {
