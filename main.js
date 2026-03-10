@@ -4001,8 +4001,11 @@ function fitTargetStreetText() {
   "serviceWorker" in navigator &&
   window.addEventListener("load", () => {
     navigator.serviceWorker
-      .register("/sw.js")
-      .then((e) => console.log("SW registered:", e.scope))
+      .register("/sw.js", { updateViaCache: "none" })
+      .then((e) => {
+        console.log("SW registered:", e.scope);
+        e.update().catch(() => {});
+      })
       .catch((e) => console.warn("SW registration failed:", e));
 
     updateHapticsUI();
