@@ -3287,24 +3287,51 @@ function updateDailyResultPanel() {
   if (shareImageBtn) shareImageBtn.onclick = () => handleDailyShareImage(e);
 }
 
+function formatDailyDistanceForShare(e) {
+  return e >= 1e3 ? `${(e / 1e3).toFixed(1)} km` : `${Math.round(e)} m`;
+}
+function getDailyShareDateLabel() {
+  let e = null;
+  if (dailyTargetData && "string" == typeof dailyTargetData.date) {
+    const t = new Date(`${dailyTargetData.date}T12:00:00`);
+    Number.isNaN(t.getTime()) || (e = t);
+  }
+  return (
+    e || (e = new Date()),
+    new Intl.DateTimeFormat("fr-FR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).format(e)
+  );
+}
 function handleDailyShareText(e) {
   if (!dailyTargetData) return;
-  const t = e.success ? e.attempts : "X";
-  let r = `Camino - ${dailyTargetData.streetName} 📍🎯 ${t}/7\n\n`;
-  if (
-    (dailyGuessHistory.forEach((t, a) => {
-      if (e.success && a === dailyGuessHistory.length - 1) r += "🟩 🏁\n";
+  const t = e.success ? e.attempts : "X",
+    r = getDailyShareDateLabel(),
+    a = dailyTargetData.streetName || "Rue inconnue",
+    n =
+      dailyGuessHistory.length > 0
+        ? Math.min(...dailyGuessHistory.map((e) => e.distance))
+        : null;
+  let s = `🗺️ Camino Daily — ${r}\n📍 Rue: ${a}\n${e.success ? "✅" : "❌"} Résultat: ${t}/7\n\n`;
+  (dailyGuessHistory.length > 0
+    ? dailyGuessHistory.forEach((t, r) => {
+      if (e.success && r === dailyGuessHistory.length - 1) s += "🟩 🏁\n";
       else {
         let e = "🟥";
         (t.distance < 500 ? (e = "🟩") : t.distance < 2e3 && (e = "🟨"),
-          (r += `${e} ${t.arrow || ""}\n`));
+          (s += `${e} ${t.arrow || "•"}\n`));
       }
-    }),
-      (r += "\ncamino8.netlify.app"),
-      navigator.clipboard && window.isSecureContext)
-  )
+    })
+    : (s += "Aucun essai enregistré.\n"),
+    null !== n &&
+    Number.isFinite(n) &&
+    (s += `\n🎯 Meilleure distance: ${formatDailyDistanceForShare(n)}\n`),
+    (s += "Essaie de faire mieux sur camino8.netlify.app"));
+  if (navigator.clipboard && window.isSecureContext)
     navigator.clipboard
-      .writeText(r)
+      .writeText(s)
       .then(() => {
         showMessage("Texte copié !", "success");
       })
@@ -3312,7 +3339,7 @@ function handleDailyShareText(e) {
   else
     try {
       const e = document.createElement("textarea");
-      ((e.value = r),
+      ((e.value = s),
         document.body.appendChild(e),
         e.select(),
         document.execCommand("copy"),
@@ -3325,107 +3352,205 @@ function handleDailyShareText(e) {
 function handleDailyShareImage(e) {
   if (!dailyTargetData) return;
   const t = document.createElement("canvas");
-  ((t.width = 600), (t.height = 480));
-  const r = t.getContext("2d"),
-    a = r.createLinearGradient(0, 0, 600, 480);
-  (a.addColorStop(0, "#0f172a"),
-    a.addColorStop(1, "#1e293b"),
-    (r.fillStyle = a),
-    r.fillRect(0, 0, 600, 480),
-    (r.strokeStyle = "rgba(99, 102, 241, 0.3)"),
-    (r.lineWidth = 2),
-    r.roundRect(4, 4, 592, 472, 16),
-    r.stroke(),
-    (r.fillStyle = "#e2e8f0"),
-    (r.font = "bold 28px system-ui, -apple-system, sans-serif"),
-    (r.textAlign = "center"),
-    r.fillText("🗺️ CAMINO", 300, 50));
-  const n = new Date().toLocaleDateString("fr-FR", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-  ((r.fillStyle = "#94a3b8"),
-    (r.font = "14px system-ui, sans-serif"),
-    r.fillText(`Défi du ${n}`, 300, 75),
-    (r.fillStyle = "#fbbf24"),
-    (r.font = "bold 20px system-ui, sans-serif"),
-    r.fillText(dailyTargetData.streetName, 300, 110));
-  const s = e.success ? e.attempts : "X";
-  ((r.fillStyle = e.success ? "#22c55e" : "#ef4444"),
-    (r.font = "bold 36px system-ui, sans-serif"),
-    r.fillText(`${s}/7`, 300, 160));
-  (dailyGuessHistory.forEach((t, a) => {
-    const n = 185 + 34 * a,
-      s = e.success && a === dailyGuessHistory.length - 1;
-    let i = "#ef4444";
-    if (
-      (s || t.distance < 500
-        ? (i = "#22c55e")
-        : t.distance < 2e3 && (i = "#eab308"),
-        (r.fillStyle = i),
-        r.beginPath(),
-        r.roundRect(160, n, 28, 28, 4),
-        r.fill(),
-        (r.fillStyle = "#e2e8f0"),
-        (r.font = "18px system-ui, sans-serif"),
-        (r.textAlign = "left"),
-        r.fillText(s ? "🏁" : t.arrow || "", 198, n + 22),
-        s)
-    )
-      ((r.fillStyle = "#22c55e"),
-        (r.font = "bold 13px system-ui, sans-serif"),
-        r.fillText("Trouvé !", 240, n + 22));
-    else {
-      ((r.fillStyle = "#94a3b8"), (r.font = "13px system-ui, sans-serif"));
-      const e =
-        t.distance >= 1e3
-          ? `${(t.distance / 1e3).toFixed(1)} km`
-          : `${Math.round(t.distance)} m`;
-      r.fillText(e, 240, n + 22);
+  ((t.width = 1080), (t.height = 1350));
+  const r = t.getContext("2d");
+  if (!r) return void showMessage("Erreur lors de la génération", "error");
+  const a = t.width,
+    n = t.height,
+    s = a / 2,
+    i = e.success ? e.attempts : "X",
+    l = dailyTargetData.streetName || "Rue inconnue",
+    o = getDailyShareDateLabel(),
+    u =
+      dailyGuessHistory.length > 0
+        ? Math.min(...dailyGuessHistory.map((e) => e.distance))
+        : null,
+    d =
+      null !== u && Number.isFinite(u) ? formatDailyDistanceForShare(u) : "—";
+  function c(e, t, r, a, n, s, i) {
+    const l = [],
+      o = String(e).split(/\s+/);
+    let u = "";
+    o.forEach((e) => {
+      const n = u ? `${u} ${e}` : e;
+      r.measureText(n).width <= a || !u ? (u = n) : (l.push(u), (u = e));
+    }),
+      u && l.push(u);
+    const d = Math.min(l.length, i);
+    for (let e = 0; e < d; e++) {
+      let a = l[e];
+      e === i - 1 && l.length > i && (a += "…");
+      r.fillText(a, t, n + e * s);
     }
-    ((r.fillStyle = "#64748b"),
-      (r.font = "12px system-ui, sans-serif"),
-      (r.textAlign = "right"),
-      r.fillText(`#${a + 1}`, 150, n + 20));
-  }),
+    return d;
+  }
+  const m = r.createLinearGradient(0, 0, 0, n);
+  (m.addColorStop(0, "#f8c46b"),
+    m.addColorStop(0.35, "#fb923c"),
+    m.addColorStop(0.68, "#f97316"),
+    m.addColorStop(1, "#0b3458"),
+    (r.fillStyle = m),
+    r.fillRect(0, 0, a, n));
+  const p = n * 0.47;
+  ((r.globalAlpha = 0.3),
+    (r.fillStyle = "#fff5cc"),
+    r.beginPath(),
+    r.arc(200, 190, 110, 0, 2 * Math.PI),
+    r.fill(),
+    (r.globalAlpha = 1));
+  const g = r.createLinearGradient(0, p, 0, n);
+  (g.addColorStop(0, "rgba(17,94,149,0.85)"),
+    g.addColorStop(1, "rgba(9,40,66,0.95)"),
+    (r.fillStyle = g),
+    r.fillRect(0, p, a, n - p),
+    (r.fillStyle = "rgba(13,35,58,0.55)"),
+    r.beginPath(),
+    r.moveTo(0, p + 30),
+    r.lineTo(120, p + 8),
+    r.lineTo(220, p - 22),
+    r.lineTo(340, p + 18),
+    r.lineTo(470, p - 8),
+    r.lineTo(600, p + 26),
+    r.lineTo(760, p - 3),
+    r.lineTo(910, p + 20),
+    r.lineTo(1080, p + 5),
+    r.lineTo(1080, n),
+    r.lineTo(0, n),
+    r.closePath(),
+    r.fill(),
+    (r.strokeStyle = "rgba(255,255,255,0.15)"),
+    (r.lineWidth = 2));
+  for (let e = 0; e < 4; e++) {
+    const t = p + 120 + 50 * e;
+    (r.beginPath(),
+      r.moveTo(80, t),
+      r.bezierCurveTo(220, t - 18, 380, t + 20, 560, t),
+      r.bezierCurveTo(730, t - 20, 910, t + 18, 1000, t),
+      r.stroke());
+  }
+  const h = { x: 60, y: 60, w: a - 120, h: n - 120 };
+  ((r.fillStyle = "rgba(2, 6, 23, 0.68)"),
+    r.beginPath(),
+    r.roundRect(h.x, h.y, h.w, h.h, 36),
+    r.fill(),
+    (r.strokeStyle = "rgba(255,255,255,0.22)"),
+    (r.lineWidth = 2.5),
+    r.stroke(),
     (r.textAlign = "center"),
-    (r.fillStyle = "#6366f1"),
-    (r.font = "bold 14px system-ui, sans-serif"),
-    r.fillText("camino8.netlify.app", 300, 460),
-    t.toBlob(async (e) => {
-      if (!e) return void showMessage("Erreur lors de la génération", "error");
-      const t = new File([e], "camino-daily.png", { type: "image/png" });
-      if (navigator.canShare && navigator.canShare({ files: [t] }))
-        try {
-          return (
-            await navigator.share({
-              title: "Camino - Défi Quotidien",
-              text: `J'ai trouvé la rue en ${s}/7 !`,
-              files: [t],
-            }),
-            void showMessage("Partagé !", "success")
-          );
-        } catch (e) {
-          if ("AbortError" === e.name) return;
-        }
-      if (navigator.clipboard && "undefined" != typeof ClipboardItem)
-        try {
-          return (
-            await navigator.clipboard.write([
-              new ClipboardItem({ "image/png": e }),
-            ]),
-            void showMessage("Image copiée dans le presse-papier !", "success")
-          );
-        } catch (e) { }
-      const r = URL.createObjectURL(e),
-        a = document.createElement("a");
-      ((a.href = r),
-        (a.download = "camino-daily.png"),
-        a.click(),
-        URL.revokeObjectURL(r),
-        showMessage("Image téléchargée !", "success"));
-    }, "image/png"));
+    (r.fillStyle = "#f8fafc"),
+    (r.font =
+      '700 66px "Montserrat", "Avenir Next", "Segoe UI", sans-serif'),
+    r.fillText("CAMINO DAILY", s, 170),
+    (r.fillStyle = "rgba(226,232,240,0.95)"),
+    (r.font = '500 32px "Nunito", "Avenir Next", "Segoe UI", sans-serif'),
+    r.fillText(`Défi du ${o}`, s, 220),
+    (r.fillStyle = "#fde68a"),
+    (r.font = '600 32px "Nunito", "Avenir Next", "Segoe UI", sans-serif'),
+    r.fillText("Rue du jour", s, 280),
+    (r.fillStyle = "#ffffff"),
+    (r.font = '700 42px "Nunito", "Avenir Next", "Segoe UI", sans-serif'),
+    c(l, s, r, 820, 338, 54, 2));
+  const y = { x: s - 150, y: 410, w: 300, h: 170 };
+  ((r.fillStyle = e.success ? "#16a34a" : "#dc2626"),
+    r.beginPath(),
+    r.roundRect(y.x, y.y, y.w, y.h, 28),
+    r.fill(),
+    (r.fillStyle = "#ffffff"),
+    (r.font = '700 82px "Montserrat", "Avenir Next", "Segoe UI", sans-serif'),
+    r.fillText(`${i}/7`, s, y.y + 98),
+    (r.font = '600 28px "Nunito", "Avenir Next", "Segoe UI", sans-serif'),
+    r.fillText(e.success ? "Défi réussi" : "Défi non résolu", s, y.y + 140));
+  const v = h.x + 70,
+    f = h.w - 140,
+    b = 74,
+    S = 610;
+  if (dailyGuessHistory.length > 0)
+    dailyGuessHistory.slice(0, 7).forEach((t, a) => {
+      const n = S + a * (b + 12),
+        i = e.success && a === dailyGuessHistory.length - 1;
+      let l = "#ef4444";
+      (i || t.distance < 500
+        ? (l = "#22c55e")
+        : t.distance < 2e3 && (l = "#eab308"),
+        (r.fillStyle = "rgba(15,23,42,0.62)"),
+        r.beginPath(),
+        r.roundRect(v, n, f, b, 20),
+        r.fill(),
+        (r.strokeStyle = "rgba(148,163,184,0.25)"),
+        (r.lineWidth = 1.4),
+        r.stroke(),
+        (r.fillStyle = "#e2e8f0"),
+        (r.font = '600 30px "Nunito", "Avenir Next", "Segoe UI", sans-serif'),
+        (r.textAlign = "left"),
+        r.fillText(`#${a + 1}`, v + 24, n + 47),
+        (r.fillStyle = l),
+        r.beginPath(),
+        r.roundRect(v + 112, n + 14, 42, 42, 10),
+        r.fill(),
+        (r.fillStyle = "#f8fafc"),
+        (r.font = '600 34px "Nunito", "Avenir Next", "Segoe UI", sans-serif'),
+        r.fillText(i ? "🏁" : t.arrow || "•", v + 174, n + 49),
+        (r.fillStyle = i ? "#86efac" : "#e2e8f0"),
+        (r.font = '600 30px "Nunito", "Avenir Next", "Segoe UI", sans-serif'),
+        r.fillText(
+          i ? "Trouvé !" : formatDailyDistanceForShare(t.distance),
+          v + 246,
+          n + 48,
+        ));
+    });
+  else
+    ((r.fillStyle = "rgba(226,232,240,0.9)"),
+      (r.font = '600 30px "Nunito", "Avenir Next", "Segoe UI", sans-serif'),
+      r.fillText("Aucun essai enregistré", v, S + 44));
+  const L = { x: h.x + 90, y: h.y + h.h - 250, w: h.w - 180, h: 170 };
+  ((r.fillStyle = "rgba(15,23,42,0.72)"),
+    r.beginPath(),
+    r.roundRect(L.x, L.y, L.w, L.h, 24),
+    r.fill(),
+    (r.strokeStyle = "rgba(148,163,184,0.3)"),
+    (r.lineWidth = 1.5),
+    r.stroke(),
+    (r.textAlign = "center"),
+    (r.fillStyle = "#f8fafc"),
+    (r.font = '700 34px "Nunito", "Avenir Next", "Segoe UI", sans-serif'),
+    r.fillText(`🎯 Meilleure distance : ${d}`, s, L.y + 55),
+    (r.fillStyle = "#cbd5e1"),
+    (r.font = '600 30px "Nunito", "Avenir Next", "Segoe UI", sans-serif'),
+    r.fillText("Essaie de faire mieux sur", s, L.y + 108),
+    (r.fillStyle = "#93c5fd"),
+    (r.font = '700 34px "Nunito", "Avenir Next", "Segoe UI", sans-serif'),
+    r.fillText("camino8.netlify.app", s, L.y + 150));
+  t.toBlob(async (e) => {
+    if (!e) return void showMessage("Erreur lors de la génération", "error");
+    const t = new File([e], "camino-daily.png", { type: "image/png" });
+    if (navigator.canShare && navigator.canShare({ files: [t] }))
+      try {
+        return (
+          await navigator.share({
+            title: "Camino - Défi Quotidien",
+            text: `${dailyTargetData.streetName} • ${i}/7\nEssaie de faire mieux sur camino8.netlify.app`,
+            files: [t],
+          }),
+          void showMessage("Partagé !", "success")
+        );
+      } catch (e) {
+        if ("AbortError" === e.name) return;
+      }
+    if (navigator.clipboard && "undefined" != typeof ClipboardItem)
+      try {
+        return (
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": e })]),
+          void showMessage("Image copiée dans le presse-papier !", "success")
+        );
+      } catch (e) { }
+    const r = URL.createObjectURL(e),
+      a = document.createElement("a");
+    ((a.href = r),
+      (a.download = "camino-daily.png"),
+      a.click(),
+      URL.revokeObjectURL(r),
+      showMessage("Image téléchargée !", "success"));
+  }, "image/png");
 }
 function getDirectionArrow(e, t) {
   const r = t[0] - e[0],
