@@ -10,6 +10,7 @@ const API_URL =
   CHRONO_DURATION = 60,
   HIGHLIGHT_DURATION_MS = 5e3,
   MAX_POINTS_PER_ITEM = 10,
+  LEADERBOARD_VISIBLE_ROWS = 3,
   MAX_LECTURE_SEARCH_RESULTS = 8;
 const UI_THEME = {
   mapStreet: "#f2a900",
@@ -276,6 +277,104 @@ function setMapStatus(e, t) {
 }
 const IS_TOUCH_DEVICE =
   "ontouchstart" in window || navigator.maxTouchPoints > 0;
+const PULL_TO_REFRESH_THRESHOLD_PX = 92;
+const PULL_TO_REFRESH_TOP_ZONE_PX = 88;
+let isPullToRefreshBound = !1;
+
+function getScrollableAncestor(e) {
+  let t = e instanceof Element ? e : null;
+  for (; t && t !== document.body;) {
+    const e = window.getComputedStyle(t),
+      r = /(auto|scroll)/.test(e.overflowY),
+      a = t.scrollHeight - t.clientHeight > 2;
+    if (r && a) return t;
+    t = t.parentElement;
+  }
+  return null;
+}
+
+function canStartPullToRefresh(e, t) {
+  if (t > PULL_TO_REFRESH_TOP_ZONE_PX) return !1;
+  const r = getScrollableAncestor(e);
+  return !(r && r.scrollTop > 0);
+}
+
+function initMobilePullToRefresh() {
+  if (!IS_TOUCH_DEVICE || isPullToRefreshBound) return;
+  isPullToRefreshBound = !0;
+  let e = {
+    active: !1,
+    eligible: !1,
+    startX: 0,
+    startY: 0,
+    lastX: 0,
+    lastY: 0,
+    maxPull: 0,
+    reloaded: !1,
+  };
+  const t = () => {
+    e = {
+      active: !1,
+      eligible: !1,
+      startX: 0,
+      startY: 0,
+      lastX: 0,
+      lastY: 0,
+      maxPull: 0,
+      reloaded: !1,
+    };
+  };
+  document.addEventListener(
+    "touchstart",
+    (r) => {
+      if (1 !== r.touches.length) return void t();
+      const a = r.touches[0],
+        n = canStartPullToRefresh(r.target, a.clientY);
+      e = {
+        active: !0,
+        eligible: n,
+        startX: a.clientX,
+        startY: a.clientY,
+        lastX: a.clientX,
+        lastY: a.clientY,
+        maxPull: 0,
+        reloaded: !1,
+      };
+    },
+    { passive: !0 },
+  );
+  document.addEventListener(
+    "touchmove",
+    (t) => {
+      if (!e.active || !e.eligible || e.reloaded || 1 !== t.touches.length) return;
+      const r = t.touches[0],
+        a = r.clientY - e.startY,
+        n = r.clientX - e.startX;
+      ((e.lastX = r.clientX), (e.lastY = r.clientY));
+      if (a < -12) return void (e.eligible = !1);
+      if (Math.abs(n) > Math.max(24, 1.25 * Math.abs(a)))
+        return void (e.eligible = !1);
+      a > e.maxPull && (e.maxPull = a);
+    },
+    { passive: !0 },
+  );
+  const r = () => {
+    if (!e.active || !e.eligible || e.reloaded) return void t();
+    const r = Math.max(e.maxPull, e.lastY - e.startY),
+      a = Math.abs(e.lastX - e.startX);
+    if (r >= PULL_TO_REFRESH_THRESHOLD_PX && r > 1.35 * a) {
+      ((e.reloaded = !0),
+        showMessage("Rafraîchissement...", "info"),
+        triggerHaptic('click'),
+        window.location.reload());
+      return;
+    }
+    t();
+  };
+  (document.addEventListener("touchend", r, { passive: !0 }),
+    document.addEventListener("touchcancel", t, { passive: !0 }));
+}
+
 function getSelectedQuartier() {
   const e = document.getElementById("quartier-select");
   if (!e) return null;
@@ -559,7 +658,8 @@ function initMap() {
   }
 }
 function initUI() {
-  IS_TOUCH_DEVICE && document.body.classList.add("touch-mode");
+  (IS_TOUCH_DEVICE && document.body.classList.add("touch-mode"),
+    initMobilePullToRefresh());
   const e = document.getElementById("restart-btn"),
     t = document.getElementById("mode-select"),
     r = document.getElementById("quartier-block"),
@@ -3300,12 +3400,14 @@ function loadAllLeaderboards() {
                               (l += `<td>${(r.time_sec || 0).toFixed(1)}s</td>`),
                               (l += `<td>${r.games_played || 0}</td>`),
                               (n.innerHTML = l),
-                              a < 3 ? o.appendChild(n) : u.appendChild(n));
+                              a < LEADERBOARD_VISIBLE_ROWS
+                                ? o.appendChild(n)
+                                : u.appendChild(n));
                           }),
                           s.appendChild(o),
                           s.appendChild(u),
                           a.appendChild(s),
-                          r.rows.length > 3)
+                          r.rows.length > LEADERBOARD_VISIBLE_ROWS)
                       ) {
                         const e = document.createElement("div");
                         e.className = "leaderboard-toggle-wrap";
@@ -4036,7 +4138,6 @@ function updateDailyUI() {
     t = Math.max(dailyGuessHistory.length, e.attempts_count || 0),
     r = 7 - t;
   if (isDailyMode) {
-    setMapStatus(`Défi: ${r} essais`, "ready");
     const t = document.getElementById("target-panel-title");
     t &&
       (e.success

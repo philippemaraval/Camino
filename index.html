@@ -45,6 +45,10 @@
             <p class="header-subtitle">Connaissez-vous vraiment votre ville ?</p>
           </div>
 
+          <div id="app-version" class="app-version-pill" aria-label="Version du jeu">
+            v0.1.9
+          </div>
+
           <!-- Petit statut carte, particulièrement utile sur mobile -->
           <div id="map-status" class="map-status-pill" aria-live="polite">
             <!-- rempli par le JS -->
@@ -316,7 +320,18 @@
           <div id="summary" class="summary hidden"></div>
         </section>
 
-        <p class="sidebar-credit">Crafted in Marseille by Philippe Maraval</p>
+        <footer class="sidebar-footer" aria-label="Réseaux sociaux et crédits">
+          <div class="sidebar-social-group sidebar-social-group--left">
+            <a class="sidebar-social-link" href="mailto:" aria-label="Contacter le jeu par mail">Mail</a>
+            <a class="sidebar-social-link" href="https://x.com/" target="_blank" rel="noopener noreferrer"
+              aria-label="Compte X du jeu">X</a>
+          </div>
+          <p class="sidebar-credit">Crafted in Marseille by Philippe Maraval</p>
+          <div class="sidebar-social-group sidebar-social-group--right">
+            <a class="sidebar-social-link" href="https://www.instagram.com/" target="_blank"
+              rel="noopener noreferrer" aria-label="Compte Instagram du jeu">Instagram</a>
+          </div>
+        </footer>
       </div>
     </div>
     <div id="map"></div>
