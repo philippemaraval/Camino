@@ -1339,6 +1339,693 @@
     return ["\u2B06\uFE0F", "\u2197\uFE0F", "\u27A1\uFE0F", "\u2198\uFE0F", "\u2B07\uFE0F", "\u2199\uFE0F", "\u2B05\uFE0F", "\u2196\uFE0F"][Math.round(angle / 45) % 8];
   }
 
+  // src/daily-runtime.js
+  function saveDailyMetaToStorageRuntime(dailyTargetData2, getDailyMetaStorageKey2) {
+    if (dailyTargetData2 && dailyTargetData2.date) {
+      try {
+        localStorage.setItem(
+          getDailyMetaStorageKey2(dailyTargetData2.date),
+          JSON.stringify({
+            date: dailyTargetData2.date,
+            streetName: dailyTargetData2.streetName || "",
+            quartier: dailyTargetData2.quartier || ""
+          })
+        );
+      } catch (error) {
+      }
+    }
+  }
+  function saveDailyGuessesToStorageRuntime({
+    dailyTargetData: dailyTargetData2,
+    dailyGuessHistory: dailyGuessHistory2,
+    getDailyGuessesStorageKey: getDailyGuessesStorageKey2,
+    getDailyMetaStorageKey: getDailyMetaStorageKey2
+  }) {
+    if (dailyTargetData2 && dailyTargetData2.date) {
+      try {
+        const storageKey = getDailyGuessesStorageKey2(dailyTargetData2.date);
+        localStorage.setItem(storageKey, JSON.stringify(dailyGuessHistory2));
+        saveDailyMetaToStorageRuntime(dailyTargetData2, getDailyMetaStorageKey2);
+      } catch (error) {
+      }
+    }
+  }
+  function restoreDailyGuessesFromStorageRuntime(dailyDate, getDailyGuessesStorageKey2) {
+    try {
+      const storageKey = getDailyGuessesStorageKey2(dailyDate);
+      const rawValue = localStorage.getItem(storageKey);
+      if (!rawValue) {
+        return [];
+      }
+      const parsed = JSON.parse(rawValue);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
+  }
+  function cleanOldDailyGuessStorageRuntime(dailyDate, {
+    getDailyGuessesStorageKey: getDailyGuessesStorageKey2,
+    getDailyMetaStorageKey: getDailyMetaStorageKey2
+  }) {
+    try {
+      const guessesPrefix = getDailyGuessesStorageKey2("");
+      const metaPrefix = getDailyMetaStorageKey2("");
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(guessesPrefix) && !key.endsWith(dailyDate)) {
+          localStorage.removeItem(key);
+        }
+        if (key && key.startsWith(metaPrefix) && !key.endsWith(dailyDate)) {
+          localStorage.removeItem(key);
+        }
+      }
+    } catch (error) {
+    }
+  }
+  function restoreDailyMetaFromStorageRuntime(dailyDate, dailyTargetData2, getDailyMetaStorageKey2) {
+    if (!dailyDate) {
+      return null;
+    }
+    try {
+      const rawValue = localStorage.getItem(getDailyMetaStorageKey2(dailyDate));
+      if (!rawValue) {
+        return null;
+      }
+      const parsed = JSON.parse(rawValue);
+      if (!parsed || !parsed.streetName) {
+        return null;
+      }
+      return {
+        ...dailyTargetData2 || {},
+        date: dailyDate,
+        streetName: parsed.streetName,
+        quartier: parsed.quartier || (dailyTargetData2 == null ? void 0 : dailyTargetData2.quartier) || ""
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+  function removeDailyHighlightRuntime(map2, dailyHighlightLayer2) {
+    if (dailyHighlightLayer2 && map2) {
+      map2.removeLayer(dailyHighlightLayer2);
+    }
+    return null;
+  }
+  function highlightDailyTargetRuntime({
+    targetGeometry,
+    isSuccess,
+    map: map2,
+    L: L2,
+    uiTheme,
+    dailyHighlightLayer: dailyHighlightLayer2
+  }) {
+    let nextLayer = removeDailyHighlightRuntime(map2, dailyHighlightLayer2);
+    if (!targetGeometry || !map2) {
+      return nextLayer;
+    }
+    let geometry;
+    try {
+      geometry = typeof targetGeometry === "string" ? JSON.parse(targetGeometry) : targetGeometry;
+    } catch (error) {
+      console.error("Invalid target geometry:", error);
+      return nextLayer;
+    }
+    const color = isSuccess ? uiTheme.mapCorrect : uiTheme.mapWrong;
+    nextLayer = L2.geoJSON(
+      { type: "Feature", geometry, properties: {} },
+      {
+        style: { color, weight: 6, opacity: 1, dashArray: isSuccess ? null : "8, 4" }
+      }
+    ).addTo(map2);
+    try {
+      if (nextLayer && Object.keys(nextLayer._layers).length > 0) {
+        const bounds = nextLayer.getBounds();
+        if (bounds && bounds.isValid()) {
+          map2.fitBounds(bounds, {
+            padding: [40, 40],
+            maxZoom: 16,
+            animate: true,
+            duration: 1.5
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Could not fit logic bounds", error);
+    }
+    return nextLayer;
+  }
+  function renderDailyGuessHistoryRuntime({
+    dailyGuessHistory: dailyGuessHistory2,
+    finalStatus,
+    dailyTargetData: dailyTargetData2,
+    normalizeQuartierKey: normalizeQuartierKey2,
+    arrondissementByQuartier: arrondissementByQuartier2,
+    calculateStreetLengthFromFeatures: calculateStreetLengthFromFeatures2,
+    allStreetFeatures: allStreetFeatures2,
+    normalizeName: normalizeName2
+  }) {
+    try {
+      const historyRoot = document.getElementById("daily-guesses-history");
+      if (!historyRoot) {
+        return;
+      }
+      if (!(dailyGuessHistory2.length !== 0 || finalStatus && finalStatus.success)) {
+        historyRoot.style.display = "none";
+        historyRoot.innerHTML = "";
+        return;
+      }
+      historyRoot.style.display = "block";
+      let html = "";
+      if (dailyGuessHistory2.length > 0) {
+        html += '<div class="daily-history-title">Essais pr\xE9c\xE9dents</div>';
+        html += '<table class="daily-history-table">';
+        html += "<thead><tr><th>#</th><th>Rue tent\xE9e</th><th>Distance</th><th></th></tr></thead>";
+        html += "<tbody>";
+        dailyGuessHistory2.forEach((guess, index) => {
+          const distanceLabel = guess.distance >= 1e3 ? `${(guess.distance / 1e3).toFixed(1)} km` : `${Math.round(guess.distance)} m`;
+          const isLastAnimatedRow = index === dailyGuessHistory2.length - 1 && !finalStatus;
+          let distanceClass = "dist-cold";
+          if (guess.distance < 500) {
+            distanceClass = "dist-hot";
+          } else if (guess.distance < 2e3) {
+            distanceClass = "dist-warm";
+          }
+          html += `<tr class="${isLastAnimatedRow ? "daily-row-enter" : ""}">`;
+          html += `<td>${index + 1}</td>`;
+          html += `<td>${guess.streetName}</td>`;
+          html += `<td class="${distanceClass}">${distanceLabel}</td>`;
+          html += `<td class="daily-arrow">${guess.arrow || ""}</td>`;
+          html += "</tr>";
+        });
+        html += "</tbody></table>";
+      }
+      const guessCount = dailyGuessHistory2.length;
+      if (guessCount >= 2 && dailyTargetData2 && !finalStatus) {
+        html += '<div class="daily-hints">';
+        html += '<div class="daily-hints-title">\u{1F4A1} Indices</div>';
+        const quartierName = dailyTargetData2.quartier || "";
+        try {
+          const normalizedQuartier = normalizeQuartierKey2(quartierName);
+          if (arrondissementByQuartier2 && arrondissementByQuartier2.has(normalizedQuartier)) {
+            const arrondissement = arrondissementByQuartier2.get(normalizedQuartier);
+            if (arrondissement) {
+              html += `<div class="daily-hint">\u{1F4CD} Arrondissement : <strong>${arrondissement}</strong></div>`;
+            }
+          }
+        } catch (error) {
+          console.error("Error with Hint 1:", error);
+        }
+        if (guessCount >= 4 && quartierName) {
+          html += `<div class="daily-hint">\u{1F3D8}\uFE0F Quartier : <strong>${quartierName}</strong></div>`;
+        }
+        if (guessCount >= 6 && dailyTargetData2.streetName) {
+          try {
+            const lengthMeters = calculateStreetLengthFromFeatures2(
+              dailyTargetData2.streetName,
+              allStreetFeatures2,
+              normalizeName2
+            );
+            if (lengthMeters > 0) {
+              const lengthLabel = lengthMeters >= 1e3 ? `${(lengthMeters / 1e3).toFixed(1)} km` : `${Math.round(lengthMeters)} m`;
+              html += `<div class="daily-hint">\u{1F4CF} Longueur : <strong>~ ${lengthLabel}</strong></div>`;
+            }
+          } catch (error) {
+            console.error("Error with Hint 3:", error);
+          }
+        }
+        html += "</div>";
+      }
+      historyRoot.innerHTML = html;
+      const targetPanel = document.querySelector(".target-panel");
+      if (targetPanel) {
+        requestAnimationFrame(() => {
+          targetPanel.scrollTop = targetPanel.scrollHeight;
+        });
+      }
+    } catch (error) {
+      console.error("Error in renderDailyGuessHistory:", error);
+    }
+  }
+  function updateDailyUIRuntime({
+    isDailyMode: isDailyMode2,
+    dailyTargetData: dailyTargetData2,
+    dailyGuessHistory: dailyGuessHistory2
+  }) {
+    const userStatus = dailyTargetData2 ? dailyTargetData2.userStatus : {};
+    const attempts = Math.max(dailyGuessHistory2.length, userStatus.attempts_count || 0);
+    const remaining = 7 - attempts;
+    if (isDailyMode2) {
+      const targetPanelTitle = document.getElementById("target-panel-title");
+      if (targetPanelTitle) {
+        if (userStatus.success) {
+          targetPanelTitle.textContent = "\u{1F389} D\xE9fi r\xE9ussi !";
+        } else {
+          targetPanelTitle.textContent = remaining <= 0 ? "\u274C D\xE9fi \xE9chou\xE9" : `\u{1F3AF} D\xE9fi quotidien \u2014 ${remaining} essai${remaining > 1 ? "s" : ""} restant${remaining > 1 ? "s" : ""}`;
+        }
+      }
+    }
+    const triesCounter = document.getElementById("daily-tries-counter");
+    if (triesCounter) {
+      if (isDailyMode2) {
+        triesCounter.style.display = "flex";
+        triesCounter.innerHTML = `<span>\u{1F3AF}</span> ${attempts} / 7 essais`;
+      } else {
+        triesCounter.style.display = "none";
+      }
+    }
+  }
+  function handleDailyShareTextRuntime({
+    result,
+    dailyTargetData: dailyTargetData2,
+    dailyGuessHistory: dailyGuessHistory2,
+    getDailyShareDateLabel,
+    formatDailyDistanceForShare: formatDailyDistanceForShare2,
+    showMessage: showMessage2
+  }) {
+    if (!dailyTargetData2) {
+      return;
+    }
+    const scoreLabel = result.success ? result.attempts : "X";
+    const dateLabel = getDailyShareDateLabel(dailyTargetData2 == null ? void 0 : dailyTargetData2.date);
+    const streetName = dailyTargetData2.streetName || "Rue inconnue";
+    const minDistance = dailyGuessHistory2.length > 0 ? Math.min(...dailyGuessHistory2.map((guess) => guess.distance)) : null;
+    let text = `\u{1F5FA}\uFE0F Camino Daily \u2014 ${dateLabel}
+\u{1F4CD} Rue: ${streetName}
+${result.success ? "\u2705" : "\u274C"} R\xE9sultat: ${scoreLabel}/7
+
+`;
+    if (dailyGuessHistory2.length > 0) {
+      dailyGuessHistory2.forEach((guess, index) => {
+        if (result.success && index === dailyGuessHistory2.length - 1) {
+          text += "\u{1F7E9} \u{1F3C1}\n";
+          return;
+        }
+        let tile = "\u{1F7E5}";
+        if (guess.distance < 500) {
+          tile = "\u{1F7E9}";
+        } else if (guess.distance < 2e3) {
+          tile = "\u{1F7E8}";
+        }
+        text += `${tile} ${guess.arrow || "\u2022"}
+`;
+      });
+    } else {
+      text += "Aucun essai enregistr\xE9.\n";
+    }
+    if (minDistance !== null && Number.isFinite(minDistance)) {
+      text += `
+\u{1F3AF} Meilleure distance: ${formatDailyDistanceForShare2(minDistance)}
+`;
+    }
+    text += "Essaie de faire mieux sur camino-ajm.pages.dev";
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(() => {
+        showMessage2("Texte copi\xE9 !", "success");
+      }).catch(() => showMessage2("Erreur lors de la copie", "error"));
+      return;
+    }
+    try {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      showMessage2("Texte copi\xE9 !", "success");
+    } catch (error) {
+      showMessage2("Impossible de copier", "error");
+    }
+  }
+  function handleDailyShareImageRuntime({
+    result,
+    dailyTargetData: dailyTargetData2,
+    dailyGuessHistory: dailyGuessHistory2,
+    getDailyShareDateLabel,
+    formatDailyDistanceForShare: formatDailyDistanceForShare2,
+    showMessage: showMessage2
+  }) {
+    if (!dailyTargetData2) {
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = 1080;
+    canvas.height = 1350;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      showMessage2("Erreur lors de la g\xE9n\xE9ration", "error");
+      return;
+    }
+    const width = canvas.width;
+    const height = canvas.height;
+    const centerX = width / 2;
+    const resultLabel = result.success ? result.attempts : "X";
+    const streetName = dailyTargetData2.streetName || "Rue inconnue";
+    const dateLabel = getDailyShareDateLabel(dailyTargetData2 == null ? void 0 : dailyTargetData2.date);
+    const minDistance = dailyGuessHistory2.length > 0 ? Math.min(...dailyGuessHistory2.map((guess) => guess.distance)) : null;
+    const bestDistanceLabel = minDistance !== null && Number.isFinite(minDistance) ? formatDailyDistanceForShare2(minDistance) : "\u2014";
+    function drawWrappedCenterText(text, center, context, maxWidth, startY, lineHeight, maxLines) {
+      const lines = [];
+      const words = String(text).split(/\s+/);
+      let currentLine = "";
+      words.forEach((word) => {
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        if (context.measureText(testLine).width <= maxWidth || !currentLine) {
+          currentLine = testLine;
+        } else {
+          lines.push(currentLine);
+          currentLine = word;
+        }
+      });
+      if (currentLine) {
+        lines.push(currentLine);
+      }
+      const drawCount = Math.min(lines.length, maxLines);
+      for (let i = 0; i < drawCount; i++) {
+        let line = lines[i];
+        if (i === maxLines - 1 && lines.length > maxLines) {
+          line += "\u2026";
+        }
+        context.fillText(line, center, startY + i * lineHeight);
+      }
+      return drawCount;
+    }
+    const topGradient = ctx.createLinearGradient(0, 0, 0, height);
+    topGradient.addColorStop(0, "#f8dca5");
+    topGradient.addColorStop(0.35, "#f2a900");
+    topGradient.addColorStop(0.68, "#4057b2");
+    topGradient.addColorStop(1, "#12297a");
+    ctx.fillStyle = topGradient;
+    ctx.fillRect(0, 0, width, height);
+    const horizonY = height * 0.47;
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = "#fff5cc";
+    ctx.beginPath();
+    ctx.arc(200, 190, 110, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    const seaGradient = ctx.createLinearGradient(0, horizonY, 0, height);
+    seaGradient.addColorStop(0, "rgba(18,41,122,0.85)");
+    seaGradient.addColorStop(1, "rgba(12,29,87,0.95)");
+    ctx.fillStyle = seaGradient;
+    ctx.fillRect(0, horizonY, width, height - horizonY);
+    ctx.fillStyle = "rgba(10,23,69,0.55)";
+    ctx.beginPath();
+    ctx.moveTo(0, horizonY + 30);
+    ctx.lineTo(120, horizonY + 8);
+    ctx.lineTo(220, horizonY - 22);
+    ctx.lineTo(340, horizonY + 18);
+    ctx.lineTo(470, horizonY - 8);
+    ctx.lineTo(600, horizonY + 26);
+    ctx.lineTo(760, horizonY - 3);
+    ctx.lineTo(910, horizonY + 20);
+    ctx.lineTo(1080, horizonY + 5);
+    ctx.lineTo(1080, height);
+    ctx.lineTo(0, height);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) {
+      const y = horizonY + 120 + 50 * i;
+      ctx.beginPath();
+      ctx.moveTo(80, y);
+      ctx.bezierCurveTo(220, y - 18, 380, y + 20, 560, y);
+      ctx.bezierCurveTo(730, y - 20, 910, y + 18, 1e3, y);
+      ctx.stroke();
+    }
+    const panel = { x: 60, y: 60, w: width - 120, h: height - 120 };
+    ctx.fillStyle = "rgba(2, 6, 23, 0.68)";
+    ctx.beginPath();
+    ctx.roundRect(panel.x, panel.y, panel.w, panel.h, 36);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.22)";
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#f8fafc";
+    ctx.font = '700 66px "Montserrat", "Avenir Next", "Segoe UI", sans-serif';
+    ctx.fillText("CAMINO DAILY", centerX, 170);
+    ctx.fillStyle = "rgba(226,232,240,0.95)";
+    ctx.font = '500 32px "Nunito", "Avenir Next", "Segoe UI", sans-serif';
+    ctx.fillText(`D\xE9fi du ${dateLabel}`, centerX, 220);
+    ctx.fillStyle = "#fde68a";
+    ctx.font = '600 32px "Nunito", "Avenir Next", "Segoe UI", sans-serif';
+    ctx.fillText("Rue du jour", centerX, 280);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = '700 42px "Nunito", "Avenir Next", "Segoe UI", sans-serif';
+    drawWrappedCenterText(streetName, centerX, ctx, 820, 338, 54, 2);
+    const scoreCard = { x: centerX - 150, y: 410, w: 300, h: 170 };
+    ctx.fillStyle = result.success ? "#1f9d66" : "#d2463c";
+    ctx.beginPath();
+    ctx.roundRect(scoreCard.x, scoreCard.y, scoreCard.w, scoreCard.h, 28);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = '700 82px "Montserrat", "Avenir Next", "Segoe UI", sans-serif';
+    ctx.fillText(`${resultLabel}/7`, centerX, scoreCard.y + 98);
+    ctx.font = '600 28px "Nunito", "Avenir Next", "Segoe UI", sans-serif';
+    ctx.fillText(result.success ? "D\xE9fi r\xE9ussi" : "D\xE9fi non r\xE9solu", centerX, scoreCard.y + 140);
+    const rowX = panel.x + 70;
+    const rowWidth = panel.w - 140;
+    const rowHeight = 74;
+    const rowsStartY = 610;
+    if (dailyGuessHistory2.length > 0) {
+      dailyGuessHistory2.slice(0, 7).forEach((guess, index) => {
+        const rowY = rowsStartY + index * (rowHeight + 12);
+        const isFinalSuccessRow = result.success && index === dailyGuessHistory2.length - 1;
+        let accent = "#d2463c";
+        if (isFinalSuccessRow || guess.distance < 500) {
+          accent = "#1f9d66";
+        } else if (guess.distance < 2e3) {
+          accent = "#e08a00";
+        }
+        ctx.fillStyle = "rgba(15,23,42,0.62)";
+        ctx.beginPath();
+        ctx.roundRect(rowX, rowY, rowWidth, rowHeight, 20);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(148,163,184,0.25)";
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+        ctx.fillStyle = "#e2e8f0";
+        ctx.font = '600 30px "Nunito", "Avenir Next", "Segoe UI", sans-serif';
+        ctx.textAlign = "left";
+        ctx.fillText(`#${index + 1}`, rowX + 24, rowY + 47);
+        ctx.fillStyle = accent;
+        ctx.beginPath();
+        ctx.roundRect(rowX + 112, rowY + 14, 42, 42, 10);
+        ctx.fill();
+        ctx.fillStyle = "#f8fafc";
+        ctx.font = '600 34px "Nunito", "Avenir Next", "Segoe UI", sans-serif';
+        ctx.fillText(isFinalSuccessRow ? "\u{1F3C1}" : guess.arrow || "\u2022", rowX + 174, rowY + 49);
+        ctx.fillStyle = isFinalSuccessRow ? "#86efac" : "#e2e8f0";
+        ctx.font = '600 30px "Nunito", "Avenir Next", "Segoe UI", sans-serif';
+        ctx.fillText(
+          isFinalSuccessRow ? "Trouv\xE9 !" : formatDailyDistanceForShare2(guess.distance),
+          rowX + 246,
+          rowY + 48
+        );
+      });
+    } else {
+      ctx.fillStyle = "rgba(226,232,240,0.9)";
+      ctx.font = '600 30px "Nunito", "Avenir Next", "Segoe UI", sans-serif';
+      ctx.fillText("Aucun essai enregistr\xE9", rowX, rowsStartY + 44);
+    }
+    const bestPanel = {
+      x: centerX + 20,
+      y: rowsStartY + 2 * (rowHeight + 12) - 6,
+      w: panel.x + panel.w - 70 - (centerX + 20),
+      h: 3 * (rowHeight + 12) + 12
+    };
+    ctx.fillStyle = "rgba(15,23,42,0.82)";
+    ctx.beginPath();
+    ctx.roundRect(bestPanel.x, bestPanel.y, bestPanel.w, bestPanel.h, 20);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(148,163,184,0.3)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    const bestCenterX = bestPanel.x + bestPanel.w / 2;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#f8fafc";
+    ctx.font = '700 28px "Nunito", "Avenir Next", "Segoe UI", sans-serif';
+    ctx.fillText("\u{1F3AF} Meilleure", bestCenterX, bestPanel.y + 42);
+    ctx.fillText(`distance : ${bestDistanceLabel}`, bestCenterX, bestPanel.y + 76);
+    ctx.fillStyle = "#cbd5e1";
+    ctx.font = '500 22px "Nunito", "Avenir Next", "Segoe UI", sans-serif';
+    ctx.fillText("Essaie de faire", bestCenterX, bestPanel.y + 130);
+    ctx.fillText("mieux sur", bestCenterX, bestPanel.y + 158);
+    ctx.fillStyle = "#93c5fd";
+    ctx.font = '700 24px "Nunito", "Avenir Next", "Segoe UI", sans-serif';
+    ctx.fillText("camino-ajm.pages.dev", bestCenterX, bestPanel.y + 200);
+    canvas.toBlob(async (blob) => {
+      if (!blob) {
+        showMessage2("Erreur lors de la g\xE9n\xE9ration", "error");
+        return;
+      }
+      const file = new File([blob], "camino-daily.png", { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            title: "Camino - D\xE9fi Quotidien",
+            text: `${dailyTargetData2.streetName} \u2022 ${resultLabel}/7
+Essaie de faire mieux sur camino-ajm.pages.dev`,
+            files: [file]
+          });
+          showMessage2("Partag\xE9 !", "success");
+          return;
+        } catch (error) {
+          if (error.name === "AbortError") {
+            return;
+          }
+        }
+      }
+      if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+          showMessage2("Image copi\xE9e dans le presse-papier !", "success");
+          return;
+        } catch (error) {
+        }
+      }
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = "camino-daily.png";
+      anchor.click();
+      URL.revokeObjectURL(objectUrl);
+      showMessage2("Image t\xE9l\xE9charg\xE9e !", "success");
+    }, "image/png");
+  }
+  function updateDailyResultPanelRuntime({
+    isSessionRunning: isSessionRunning2,
+    dailyGuessHistory: dailyGuessHistory2,
+    dailyTargetData: dailyTargetData2,
+    isDailyGameOver,
+    setDailyGuessHistory,
+    getTodayDailyStorageDate: getTodayDailyStorageDate2,
+    getDailyGuessesStorageKey: getDailyGuessesStorageKey2,
+    restoreDailyMetaFromStorage: restoreDailyMetaFromStorage2,
+    ensureDailyShareContext: ensureDailyShareContext2,
+    handleDailyShareText: handleDailyShareText2,
+    handleDailyShareImage: handleDailyShareImage2,
+    showMessage: showMessage2
+  }) {
+    const panel = document.getElementById("daily-result-panel");
+    const content = document.getElementById("daily-result-content");
+    if (!panel || !content) {
+      return;
+    }
+    if (isSessionRunning2) {
+      panel.style.display = "none";
+      return;
+    }
+    let guesses = Array.isArray(dailyGuessHistory2) ? dailyGuessHistory2.slice() : [];
+    const dailyDate = (dailyTargetData2 == null ? void 0 : dailyTargetData2.date) || getTodayDailyStorageDate2();
+    if (guesses.length === 0 && !isDailyGameOver && dailyDate) {
+      const stored = localStorage.getItem(getDailyGuessesStorageKey2(dailyDate));
+      if (stored) {
+        try {
+          guesses = JSON.parse(stored);
+        } catch (error) {
+          guesses = [];
+        }
+      }
+    }
+    if (!Array.isArray(guesses)) {
+      guesses = [];
+    }
+    if (guesses.length === 0) {
+      panel.style.display = "none";
+      return;
+    }
+    const normalizedGuesses = guesses.slice(0, 7).map((guess) => ({ ...guess }));
+    setDailyGuessHistory(normalizedGuesses);
+    restoreDailyMetaFromStorage2(dailyDate);
+    const isSuccess = guesses.some((guess) => guess.distance < 20);
+    const isFinished = isSuccess || guesses.length >= 7 || isDailyGameOver;
+    if (!isFinished) {
+      panel.style.display = "none";
+      return;
+    }
+    const result = {
+      success: isSuccess,
+      attempts: guesses.length
+    };
+    let html = "";
+    if (isSuccess) {
+      const attempts = result.attempts;
+      html += `<div class="daily-result daily-result--success">\u{1F389} Bravo, vous avez trouv\xE9 la rue en ${attempts} essai${attempts > 1 ? "s" : ""} !</div>`;
+    } else {
+      const minDistance = Math.min(...guesses.map((guess) => guess.distance));
+      const minDistanceLabel = minDistance >= 1e3 ? `${(minDistance / 1e3).toFixed(1)} km` : `${Math.round(minDistance)} m`;
+      html += `<div class="daily-result daily-result--fail">Votre meilleur score est ${minDistanceLabel} en sept essais</div>`;
+    }
+    html += '<div class="daily-share-buttons">';
+    html += '<button id="daily-share-text" class="btn-secondary daily-share-btn">\u{1F4CB} Copier le texte</button>';
+    html += `<button id="daily-share-image" class="btn-primary daily-share-btn">\u{1F4F8} Partager l'image</button>`;
+    html += "</div>";
+    html += `<p class="daily-share-hint">L'image est plus impactante sur les r\xE9seaux !</p>`;
+    content.innerHTML = html;
+    panel.style.display = "block";
+    const shareTextBtn = document.getElementById("daily-share-text");
+    const shareImageBtn = document.getElementById("daily-share-image");
+    if (shareTextBtn) {
+      shareTextBtn.onclick = async () => {
+        shareTextBtn.disabled = true;
+        const contextReady = await ensureDailyShareContext2(dailyDate, guesses);
+        shareTextBtn.disabled = false;
+        if (!contextReady) {
+          showMessage2("Impossible de pr\xE9parer le partage du Daily.", "error");
+          return;
+        }
+        handleDailyShareText2(result);
+      };
+    }
+    if (shareImageBtn) {
+      shareImageBtn.onclick = async () => {
+        shareImageBtn.disabled = true;
+        const contextReady = await ensureDailyShareContext2(dailyDate, guesses);
+        shareImageBtn.disabled = false;
+        if (!contextReady) {
+          showMessage2("Impossible de pr\xE9parer le partage du Daily.", "error");
+          return;
+        }
+        handleDailyShareImage2(result);
+      };
+    }
+  }
+  function fitTargetStreetTextRuntime(targetStreetElementId = "target-street") {
+    const targetStreetEl = document.getElementById(targetStreetElementId);
+    if (!targetStreetEl) {
+      return;
+    }
+    if (!window.matchMedia("(max-width: 600px)").matches) {
+      targetStreetEl.style.fontSize = "";
+      return;
+    }
+    targetStreetEl.style.whiteSpace = "nowrap";
+    const availableWidth = targetStreetEl.clientWidth;
+    if (availableWidth <= 0) {
+      return;
+    }
+    targetStreetEl.style.fontSize = "18px";
+    if (targetStreetEl.scrollWidth <= availableWidth) {
+      return;
+    }
+    let low = 11;
+    let high = 18;
+    let best = 11;
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      targetStreetEl.style.fontSize = `${mid}px`;
+      if (targetStreetEl.scrollWidth <= availableWidth) {
+        best = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    targetStreetEl.style.fontSize = `${best}px`;
+  }
+
   // src/auth.js
   var USER_STORAGE_KEY = "camino_user";
   function saveCurrentUserToStorage(user) {
@@ -3240,76 +3927,21 @@
     updateTargetPanelTitle(), refreshLectureStreetSearchForCurrentMode(), updateStartStopButton(), updatePauseButton(), updateLayoutSessionState(), updateDailyUI(), updateDailyResultPanel();
   }
   function renderDailyGuessHistory(e) {
-    try {
-      const t = document.getElementById("daily-guesses-history");
-      if (!t) return;
-      if (!(0 !== dailyGuessHistory.length || e && e.success))
-        return t.style.display = "none", void (t.innerHTML = "");
-      t.style.display = "block";
-      let r = "";
-      dailyGuessHistory.length > 0 && (r += '<div class="daily-history-title">Essais pr\xE9c\xE9dents</div>', r += '<table class="daily-history-table">', r += "<thead><tr><th>#</th><th>Rue tent\xE9e</th><th>Distance</th><th></th></tr></thead>", r += "<tbody>", dailyGuessHistory.forEach((t2, a2) => {
-        const n = t2.distance >= 1e3 ? `${(t2.distance / 1e3).toFixed(1)} km` : `${Math.round(t2.distance)} m`, s = a2 === dailyGuessHistory.length - 1 && !e;
-        let i = "dist-cold";
-        t2.distance < 500 ? i = "dist-hot" : t2.distance < 2e3 && (i = "dist-warm"), r += `<tr class="${s ? "daily-row-enter" : ""}">`, r += `<td>${a2 + 1}</td>`, r += `<td>${t2.streetName}</td>`, r += `<td class="${i}">${n}</td>`, r += `<td class="daily-arrow">${t2.arrow || ""}</td>`, r += "</tr>";
-      }), r += "</tbody></table>");
-      const a = dailyGuessHistory.length;
-      if (a >= 2 && dailyTargetData && !e) {
-        r += '<div class="daily-hints">', r += '<div class="daily-hints-title">\u{1F4A1} Indices</div>';
-        const t2 = dailyTargetData.quartier || "";
-        try {
-          const e2 = normalizeQuartierKey(t2);
-          if (arrondissementByQuartier && arrondissementByQuartier.has(e2)) {
-            const t3 = arrondissementByQuartier.get(e2);
-            t3 && (r += `<div class="daily-hint">\u{1F4CD} Arrondissement : <strong>${t3}</strong></div>`);
-          }
-        } catch (e2) {
-          console.error("Error with Hint 1:", e2);
-        }
-        if (a >= 4 && t2 && (r += `<div class="daily-hint">\u{1F3D8}\uFE0F Quartier : <strong>${t2}</strong></div>`), a >= 6 && dailyTargetData.streetName)
-          try {
-            const e2 = calculateStreetLengthFromFeatures(
-              dailyTargetData.streetName,
-              allStreetFeatures,
-              normalizeName
-            );
-            if (e2 > 0) {
-              const t3 = e2 >= 1e3 ? `${(e2 / 1e3).toFixed(1)} km` : `${Math.round(e2)} m`;
-              r += `<div class="daily-hint">\u{1F4CF} Longueur : <strong>~ ${t3}</strong></div>`;
-            }
-          } catch (e2) {
-            console.error("Error with Hint 3:", e2);
-          }
-        r += "</div>";
-      }
-      const historyContainer = document.getElementById("daily-guesses-history");
-      if (historyContainer) {
-        historyContainer.innerHTML = r;
-      }
-      const targetPanel = document.querySelector(".target-panel");
-      if (targetPanel) {
-        requestAnimationFrame(() => {
-          targetPanel.scrollTop = targetPanel.scrollHeight;
-        });
-      }
-    } catch (err) {
-      console.error("Error in renderDailyGuessHistory:", err);
-    }
+    renderDailyGuessHistoryRuntime({
+      dailyGuessHistory,
+      finalStatus: e,
+      dailyTargetData,
+      normalizeQuartierKey,
+      arrondissementByQuartier,
+      calculateStreetLengthFromFeatures,
+      allStreetFeatures,
+      normalizeName
+    });
   }
   function restoreDailyMetaFromStorage(e) {
-    if (!e) return false;
-    try {
-      const t = localStorage.getItem(getDailyMetaStorageKey(e));
-      if (!t) return false;
-      const r = JSON.parse(t);
-      return !(!r || !r.streetName) && (dailyTargetData = {
-        ...dailyTargetData || {},
-        date: e,
-        streetName: r.streetName,
-        quartier: r.quartier || (dailyTargetData == null ? void 0 : dailyTargetData.quartier) || ""
-      }, true);
-    } catch (e2) {
-      return false;
-    }
+    const t = restoreDailyMetaFromStorageRuntime(e, dailyTargetData, getDailyMetaStorageKey);
+    if (!t) return false;
+    return dailyTargetData = t, true;
   }
   async function ensureDailyShareContext(e, t) {
     Array.isArray(t) && t.length > 0 && (dailyGuessHistory = t.slice(0, 7).map((e2) => ({ ...e2 })));
@@ -3331,288 +3963,86 @@
     }
   }
   function updateDailyResultPanel() {
-    const panel = document.getElementById("daily-result-panel");
-    const content = document.getElementById("daily-result-content");
-    if (!panel || !content) return;
-    if (isSessionRunning) {
-      panel.style.display = "none";
-      return;
-    }
-    let guesses = Array.isArray(dailyGuessHistory) ? dailyGuessHistory.slice() : [];
-    const dailyDate = (dailyTargetData == null ? void 0 : dailyTargetData.date) || getTodayDailyStorageDate();
-    if (guesses.length === 0 && !window._dailyGameOver && dailyDate) {
-      const stored = localStorage.getItem(getDailyGuessesStorageKey(dailyDate));
-      if (stored) {
-        try {
-          guesses = JSON.parse(stored);
-        } catch (err) {
-        }
-      }
-    }
-    Array.isArray(guesses) || (guesses = []);
-    if (guesses.length === 0) {
-      panel.style.display = "none";
-      return;
-    }
-    dailyGuessHistory = guesses.slice(0, 7).map((e2) => ({ ...e2 }));
-    restoreDailyMetaFromStorage(dailyDate);
-    const isSuccess = guesses.some((g) => g.distance < 20);
-    const isFinished = isSuccess || guesses.length >= 7 || window._dailyGameOver;
-    if (!isFinished) {
-      panel.style.display = "none";
-      return;
-    }
-    const e = {
-      success: isSuccess,
-      attempts: guesses.length
-    };
-    let r = "";
-    if (isSuccess) {
-      const t = e.attempts;
-      r += `<div class="daily-result daily-result--success">\u{1F389} Bravo, vous avez trouv\xE9 la rue en ${t} essai${t > 1 ? "s" : ""} !</div>`;
-    } else {
-      const minDistance = Math.min(...guesses.map((g) => g.distance));
-      const t = minDistance >= 1e3 ? `${(minDistance / 1e3).toFixed(1)} km` : `${Math.round(minDistance)} m`;
-      r += `<div class="daily-result daily-result--fail">Votre meilleur score est ${t} en sept essais</div>`;
-    }
-    r += '<div class="daily-share-buttons">';
-    r += '<button id="daily-share-text" class="btn-secondary daily-share-btn">\u{1F4CB} Copier le texte</button>';
-    r += `<button id="daily-share-image" class="btn-primary daily-share-btn">\u{1F4F8} Partager l'image</button>`;
-    r += "</div>";
-    r += `<p class="daily-share-hint">L'image est plus impactante sur les r\xE9seaux !</p>`;
-    content.innerHTML = r;
-    panel.style.display = "block";
-    const shareTextBtn = document.getElementById("daily-share-text"), shareImageBtn = document.getElementById("daily-share-image");
-    if (shareTextBtn)
-      shareTextBtn.onclick = async () => {
-        shareTextBtn.disabled = true;
-        const t = await ensureDailyShareContext(dailyDate, guesses);
-        if (shareTextBtn.disabled = false, !t) {
-          showMessage("Impossible de pr\xE9parer le partage du Daily.", "error");
-          return;
-        }
-        handleDailyShareText(e);
-      };
-    if (shareImageBtn)
-      shareImageBtn.onclick = async () => {
-        shareImageBtn.disabled = true;
-        const t = await ensureDailyShareContext(dailyDate, guesses);
-        if (shareImageBtn.disabled = false, !t) {
-          showMessage("Impossible de pr\xE9parer le partage du Daily.", "error");
-          return;
-        }
-        handleDailyShareImage(e);
-      };
+    updateDailyResultPanelRuntime({
+      isSessionRunning,
+      dailyGuessHistory,
+      dailyTargetData,
+      isDailyGameOver: !!window._dailyGameOver,
+      setDailyGuessHistory: (e) => {
+        dailyGuessHistory = e;
+      },
+      getTodayDailyStorageDate,
+      getDailyGuessesStorageKey,
+      restoreDailyMetaFromStorage,
+      ensureDailyShareContext,
+      handleDailyShareText,
+      handleDailyShareImage,
+      showMessage
+    });
   }
   function handleDailyShareText(e) {
-    if (!dailyTargetData) return;
-    const t = e.success ? e.attempts : "X", r = getDailyShareDateLabelFromDate(dailyTargetData == null ? void 0 : dailyTargetData.date), a = dailyTargetData.streetName || "Rue inconnue", n = dailyGuessHistory.length > 0 ? Math.min(...dailyGuessHistory.map((e2) => e2.distance)) : null;
-    let s = `\u{1F5FA}\uFE0F Camino Daily \u2014 ${r}
-\u{1F4CD} Rue: ${a}
-${e.success ? "\u2705" : "\u274C"} R\xE9sultat: ${t}/7
-
-`;
-    dailyGuessHistory.length > 0 ? dailyGuessHistory.forEach((t2, r2) => {
-      if (e.success && r2 === dailyGuessHistory.length - 1) s += "\u{1F7E9} \u{1F3C1}\n";
-      else {
-        let e2 = "\u{1F7E5}";
-        t2.distance < 500 ? e2 = "\u{1F7E9}" : t2.distance < 2e3 && (e2 = "\u{1F7E8}"), s += `${e2} ${t2.arrow || "\u2022"}
-`;
-      }
-    }) : s += "Aucun essai enregistr\xE9.\n", null !== n && Number.isFinite(n) && (s += `
-\u{1F3AF} Meilleure distance: ${formatDailyDistanceForShare(n)}
-`), s += "Essaie de faire mieux sur camino-ajm.pages.dev";
-    if (navigator.clipboard && window.isSecureContext)
-      navigator.clipboard.writeText(s).then(() => {
-        showMessage("Texte copi\xE9 !", "success");
-      }).catch(() => showMessage("Erreur lors de la copie", "error"));
-    else
-      try {
-        const e2 = document.createElement("textarea");
-        e2.value = s, document.body.appendChild(e2), e2.select(), document.execCommand("copy"), document.body.removeChild(e2), showMessage("Texte copi\xE9 !", "success");
-      } catch (e2) {
-        showMessage("Impossible de copier", "error");
-      }
+    handleDailyShareTextRuntime({
+      result: e,
+      dailyTargetData,
+      dailyGuessHistory,
+      getDailyShareDateLabel: getDailyShareDateLabelFromDate,
+      formatDailyDistanceForShare,
+      showMessage
+    });
   }
   function handleDailyShareImage(e) {
-    if (!dailyTargetData) return;
-    const t = document.createElement("canvas");
-    t.width = 1080, t.height = 1350;
-    const r = t.getContext("2d");
-    if (!r) return void showMessage("Erreur lors de la g\xE9n\xE9ration", "error");
-    const a = t.width, n = t.height, s = a / 2, i = e.success ? e.attempts : "X", l = dailyTargetData.streetName || "Rue inconnue", o = getDailyShareDateLabelFromDate(dailyTargetData == null ? void 0 : dailyTargetData.date), u = dailyGuessHistory.length > 0 ? Math.min(...dailyGuessHistory.map((e2) => e2.distance)) : null, d = null !== u && Number.isFinite(u) ? formatDailyDistanceForShare(u) : "\u2014";
-    function c(e2, t2, r2, a2, n2, s2, i2) {
-      const l2 = [], o2 = String(e2).split(/\s+/);
-      let u2 = "";
-      o2.forEach((e3) => {
-        const n3 = u2 ? `${u2} ${e3}` : e3;
-        r2.measureText(n3).width <= a2 || !u2 ? u2 = n3 : (l2.push(u2), u2 = e3);
-      }), u2 && l2.push(u2);
-      const d2 = Math.min(l2.length, i2);
-      for (let e3 = 0; e3 < d2; e3++) {
-        let a3 = l2[e3];
-        e3 === i2 - 1 && l2.length > i2 && (a3 += "\u2026");
-        r2.fillText(a3, t2, n2 + e3 * s2);
-      }
-      return d2;
-    }
-    const m = r.createLinearGradient(0, 0, 0, n);
-    m.addColorStop(0, "#f8dca5"), m.addColorStop(0.35, "#f2a900"), m.addColorStop(0.68, "#4057b2"), m.addColorStop(1, "#12297a"), r.fillStyle = m, r.fillRect(0, 0, a, n);
-    const p = n * 0.47;
-    r.globalAlpha = 0.3, r.fillStyle = "#fff5cc", r.beginPath(), r.arc(200, 190, 110, 0, 2 * Math.PI), r.fill(), r.globalAlpha = 1;
-    const g = r.createLinearGradient(0, p, 0, n);
-    g.addColorStop(0, "rgba(18,41,122,0.85)"), g.addColorStop(1, "rgba(12,29,87,0.95)"), r.fillStyle = g, r.fillRect(0, p, a, n - p), r.fillStyle = "rgba(10,23,69,0.55)", r.beginPath(), r.moveTo(0, p + 30), r.lineTo(120, p + 8), r.lineTo(220, p - 22), r.lineTo(340, p + 18), r.lineTo(470, p - 8), r.lineTo(600, p + 26), r.lineTo(760, p - 3), r.lineTo(910, p + 20), r.lineTo(1080, p + 5), r.lineTo(1080, n), r.lineTo(0, n), r.closePath(), r.fill(), r.strokeStyle = "rgba(255,255,255,0.15)", r.lineWidth = 2;
-    for (let e2 = 0; e2 < 4; e2++) {
-      const t2 = p + 120 + 50 * e2;
-      r.beginPath(), r.moveTo(80, t2), r.bezierCurveTo(220, t2 - 18, 380, t2 + 20, 560, t2), r.bezierCurveTo(730, t2 - 20, 910, t2 + 18, 1e3, t2), r.stroke();
-    }
-    const h = { x: 60, y: 60, w: a - 120, h: n - 120 };
-    r.fillStyle = "rgba(2, 6, 23, 0.68)", r.beginPath(), r.roundRect(h.x, h.y, h.w, h.h, 36), r.fill(), r.strokeStyle = "rgba(255,255,255,0.22)", r.lineWidth = 2.5, r.stroke(), r.textAlign = "center", r.fillStyle = "#f8fafc", r.font = '700 66px "Montserrat", "Avenir Next", "Segoe UI", sans-serif', r.fillText("CAMINO DAILY", s, 170), r.fillStyle = "rgba(226,232,240,0.95)", r.font = '500 32px "Nunito", "Avenir Next", "Segoe UI", sans-serif', r.fillText(`D\xE9fi du ${o}`, s, 220), r.fillStyle = "#fde68a", r.font = '600 32px "Nunito", "Avenir Next", "Segoe UI", sans-serif', r.fillText("Rue du jour", s, 280), r.fillStyle = "#ffffff", r.font = '700 42px "Nunito", "Avenir Next", "Segoe UI", sans-serif', c(l, s, r, 820, 338, 54, 2);
-    const y = { x: s - 150, y: 410, w: 300, h: 170 };
-    r.fillStyle = e.success ? "#1f9d66" : "#d2463c", r.beginPath(), r.roundRect(y.x, y.y, y.w, y.h, 28), r.fill(), r.fillStyle = "#ffffff", r.font = '700 82px "Montserrat", "Avenir Next", "Segoe UI", sans-serif', r.fillText(`${i}/7`, s, y.y + 98), r.font = '600 28px "Nunito", "Avenir Next", "Segoe UI", sans-serif', r.fillText(e.success ? "D\xE9fi r\xE9ussi" : "D\xE9fi non r\xE9solu", s, y.y + 140);
-    const v = h.x + 70, f = h.w - 140, b = 74, S = 610;
-    if (dailyGuessHistory.length > 0)
-      dailyGuessHistory.slice(0, 7).forEach((t2, a2) => {
-        const n2 = S + a2 * (b + 12), i2 = e.success && a2 === dailyGuessHistory.length - 1;
-        let l2 = "#d2463c";
-        i2 || t2.distance < 500 ? l2 = "#1f9d66" : t2.distance < 2e3 && (l2 = "#e08a00"), r.fillStyle = "rgba(15,23,42,0.62)", r.beginPath(), r.roundRect(v, n2, f, b, 20), r.fill(), r.strokeStyle = "rgba(148,163,184,0.25)", r.lineWidth = 1.4, r.stroke(), r.fillStyle = "#e2e8f0", r.font = '600 30px "Nunito", "Avenir Next", "Segoe UI", sans-serif', r.textAlign = "left", r.fillText(`#${a2 + 1}`, v + 24, n2 + 47), r.fillStyle = l2, r.beginPath(), r.roundRect(v + 112, n2 + 14, 42, 42, 10), r.fill(), r.fillStyle = "#f8fafc", r.font = '600 34px "Nunito", "Avenir Next", "Segoe UI", sans-serif', r.fillText(i2 ? "\u{1F3C1}" : t2.arrow || "\u2022", v + 174, n2 + 49), r.fillStyle = i2 ? "#86efac" : "#e2e8f0", r.font = '600 30px "Nunito", "Avenir Next", "Segoe UI", sans-serif', r.fillText(
-          i2 ? "Trouv\xE9 !" : formatDailyDistanceForShare(t2.distance),
-          v + 246,
-          n2 + 48
-        );
-      });
-    else
-      r.fillStyle = "rgba(226,232,240,0.9)", r.font = '600 30px "Nunito", "Avenir Next", "Segoe UI", sans-serif', r.fillText("Aucun essai enregistr\xE9", v, S + 44);
-    const L2 = { x: s + 20, y: S + 2 * (b + 12) - 6, w: h.x + h.w - 70 - (s + 20), h: 3 * (b + 12) + 12 };
-    r.fillStyle = "rgba(15,23,42,0.82)", r.beginPath(), r.roundRect(L2.x, L2.y, L2.w, L2.h, 20), r.fill(), r.strokeStyle = "rgba(148,163,184,0.3)", r.lineWidth = 1.5, r.stroke();
-    const Lcx = L2.x + L2.w / 2;
-    r.textAlign = "center", r.fillStyle = "#f8fafc", r.font = '700 28px "Nunito", "Avenir Next", "Segoe UI", sans-serif', r.fillText(`\u{1F3AF} Meilleure`, Lcx, L2.y + 42), r.fillText(`distance : ${d}`, Lcx, L2.y + 76), r.fillStyle = "#cbd5e1", r.font = '500 22px "Nunito", "Avenir Next", "Segoe UI", sans-serif', r.fillText("Essaie de faire", Lcx, L2.y + 130), r.fillText("mieux sur", Lcx, L2.y + 158), r.fillStyle = "#93c5fd", r.font = '700 24px "Nunito", "Avenir Next", "Segoe UI", sans-serif', r.fillText("camino-ajm.pages.dev", Lcx, L2.y + 200);
-    t.toBlob(async (e2) => {
-      if (!e2) return void showMessage("Erreur lors de la g\xE9n\xE9ration", "error");
-      const t2 = new File([e2], "camino-daily.png", { type: "image/png" });
-      if (navigator.canShare && navigator.canShare({ files: [t2] }))
-        try {
-          return await navigator.share({
-            title: "Camino - D\xE9fi Quotidien",
-            text: `${dailyTargetData.streetName} \u2022 ${i}/7
-Essaie de faire mieux sur camino-ajm.pages.dev`,
-            files: [t2]
-          }), void showMessage("Partag\xE9 !", "success");
-        } catch (e3) {
-          if ("AbortError" === e3.name) return;
-        }
-      if (navigator.clipboard && "undefined" != typeof ClipboardItem)
-        try {
-          return await navigator.clipboard.write([new ClipboardItem({ "image/png": e2 })]), void showMessage("Image copi\xE9e dans le presse-papier !", "success");
-        } catch (e3) {
-        }
-      const r2 = URL.createObjectURL(e2), a2 = document.createElement("a");
-      a2.href = r2, a2.download = "camino-daily.png", a2.click(), URL.revokeObjectURL(r2), showMessage("Image t\xE9l\xE9charg\xE9e !", "success");
-    }, "image/png");
+    handleDailyShareImageRuntime({
+      result: e,
+      dailyTargetData,
+      dailyGuessHistory,
+      getDailyShareDateLabel: getDailyShareDateLabelFromDate,
+      formatDailyDistanceForShare,
+      showMessage
+    });
   }
   function saveDailyGuessesToStorage() {
-    if (dailyTargetData && dailyTargetData.date)
-      try {
-        const e = getDailyGuessesStorageKey(dailyTargetData.date);
-        localStorage.setItem(e, JSON.stringify(dailyGuessHistory));
-        saveDailyMetaToStorage();
-      } catch (e) {
-      }
+    saveDailyGuessesToStorageRuntime({
+      dailyTargetData,
+      dailyGuessHistory,
+      getDailyGuessesStorageKey,
+      getDailyMetaStorageKey
+    });
   }
   function saveDailyMetaToStorage() {
-    if (dailyTargetData && dailyTargetData.date)
-      try {
-        localStorage.setItem(
-          getDailyMetaStorageKey(dailyTargetData.date),
-          JSON.stringify({
-            date: dailyTargetData.date,
-            streetName: dailyTargetData.streetName || "",
-            quartier: dailyTargetData.quartier || ""
-          })
-        );
-      } catch (e) {
-      }
+    saveDailyMetaToStorageRuntime(dailyTargetData, getDailyMetaStorageKey);
   }
   function restoreDailyGuessesFromStorage(e) {
-    try {
-      const t = getDailyGuessesStorageKey(e), r = localStorage.getItem(t);
-      r && (dailyGuessHistory = JSON.parse(r));
-    } catch (e2) {
-      dailyGuessHistory = [];
-    }
+    dailyGuessHistory = restoreDailyGuessesFromStorageRuntime(e, getDailyGuessesStorageKey);
   }
   function cleanOldDailyGuessStorage(e) {
-    try {
-      const guessesPrefix = getDailyGuessesStorageKey("");
-      const metaPrefix = getDailyMetaStorageKey("");
-      for (let t = localStorage.length - 1; t >= 0; t--) {
-        const r = localStorage.key(t);
-        r && r.startsWith(guessesPrefix) && !r.endsWith(e) && localStorage.removeItem(r);
-        r && r.startsWith(metaPrefix) && !r.endsWith(e) && localStorage.removeItem(r);
-      }
-    } catch (e2) {
-    }
+    cleanOldDailyGuessStorageRuntime(e, { getDailyGuessesStorageKey, getDailyMetaStorageKey });
   }
   function highlightDailyTarget(e, t) {
-    if (removeDailyHighlight(), !e || !map) return;
-    let r;
-    try {
-      r = "string" == typeof e ? JSON.parse(e) : e;
-    } catch (e2) {
-      return void console.error("Invalid target geometry:", e2);
-    }
-    const a = t ? UI_THEME.mapCorrect : UI_THEME.mapWrong;
-    dailyHighlightLayer = L.geoJSON(
-      { type: "Feature", geometry: r, properties: {} },
-      {
-        style: { color: a, weight: 6, opacity: 1, dashArray: t ? null : "8, 4" }
-      }
-    ).addTo(map);
-    try {
-      if (dailyHighlightLayer && Object.keys(dailyHighlightLayer._layers).length > 0) {
-        const e2 = dailyHighlightLayer.getBounds();
-        e2 && e2.isValid() && map.fitBounds(e2, {
-          padding: [40, 40],
-          maxZoom: 16,
-          animate: true,
-          duration: 1.5
-        });
-      }
-    } catch (e2) {
-      console.error("Could not fit logic bounds", e2);
-    }
+    dailyHighlightLayer = highlightDailyTargetRuntime({
+      targetGeometry: e,
+      isSuccess: t,
+      map,
+      L,
+      uiTheme: UI_THEME,
+      dailyHighlightLayer
+    });
   }
   function removeDailyHighlight() {
-    dailyHighlightLayer && map && (map.removeLayer(dailyHighlightLayer), dailyHighlightLayer = null);
+    dailyHighlightLayer = removeDailyHighlightRuntime(map, dailyHighlightLayer);
   }
   function updateDailyUI() {
-    const e = dailyTargetData ? dailyTargetData.userStatus : {}, t = Math.max(dailyGuessHistory.length, e.attempts_count || 0), r = 7 - t;
-    if (isDailyMode) {
-      const t2 = document.getElementById("target-panel-title");
-      t2 && (e.success ? t2.textContent = "\u{1F389} D\xE9fi r\xE9ussi !" : t2.textContent = r <= 0 ? "\u274C D\xE9fi \xE9chou\xE9" : `\u{1F3AF} D\xE9fi quotidien \u2014 ${r} essai${r > 1 ? "s" : ""} restant${r > 1 ? "s" : ""}`);
-    }
-    const a = document.getElementById("daily-tries-counter");
-    a && (isDailyMode ? (a.style.display = "flex", a.innerHTML = `<span>\u{1F3AF}</span> ${t} / 7 essais`) : a.style.display = "none");
+    updateDailyUIRuntime({
+      isDailyMode,
+      dailyTargetData,
+      dailyGuessHistory
+    });
   }
   function handleDailyStop() {
     triggerHaptic("click");
     return !!isDailyMode && (endDailySession(), removeDailyHighlight(), true);
   }
   function fitTargetStreetText() {
-    const e = document.getElementById("target-street");
-    if (!e) return;
-    if (!window.matchMedia("(max-width: 600px)").matches)
-      return void (e.style.fontSize = "");
-    e.style.whiteSpace = "nowrap";
-    const t = e.clientWidth;
-    if (t <= 0) return;
-    if (e.style.fontSize = "18px", e.scrollWidth <= t) return;
-    let r = 11, a = 18, n = 11;
-    for (; r <= a; ) {
-      const s = Math.floor((r + a) / 2);
-      e.style.fontSize = s + "px", e.scrollWidth <= t ? (n = s, r = s + 1) : a = s - 1;
-    }
-    e.style.fontSize = n + "px";
+    fitTargetStreetTextRuntime("target-street");
   }
   window.addEventListener("resize", () => {
     requestAnimationFrame(fitTargetStreetText);
