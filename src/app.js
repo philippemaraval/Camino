@@ -1,17 +1,31 @@
 import {
   API_URL,
   CHRONO_DURATION,
-  DAILY_GUESSES_STORAGE_PREFIX,
-  DAILY_META_STORAGE_PREFIX,
   HIGHLIGHT_DURATION_MS,
-  LEADERBOARD_VISIBLE_ROWS,
   MAX_ERRORS_MARATHON,
   MAX_LECTURE_SEARCH_RESULTS,
-  MAX_POINTS_PER_ITEM,
   MAX_TIME_SECONDS,
   SESSION_SIZE,
   UI_THEME,
 } from "./config.js";
+import {
+  AVATAR_UNLOCKS,
+  GAME_LABELS,
+  TITLE_NAMES,
+  ZONE_LABELS,
+  getGlobalRankLevelForTitleIndex,
+  getGlobalRankMeta,
+  getPlayerTitle,
+  getTitleThresholds,
+  loadAllLeaderboards,
+  loadLeaderboard,
+} from "./leaderboard.js";
+import {
+  calculateStreetLengthFromFeatures,
+  computeFeatureCentroid,
+  getDistanceMeters,
+  getDistanceToFeature,
+} from "./map.js";
 import {
   playBuzz,
   playDing,
@@ -22,6 +36,16 @@ import {
 } from "./audio.js";
 import { initOnboardingBanner, loadUniqueVisitorCounter } from "./onboarding.js";
 import { toggleHaptics, triggerHaptic, updateHapticsUI } from "./haptics.js";
+import {
+  formatDailyDistanceForShare,
+  getDailyGuessesStorageKey,
+  getDailyMetaStorageKey,
+  getDailyShareDateLabelFromDate as getDailyShareDateLabel,
+  getDirectionArrow,
+  getTodayDailyStorageDate,
+} from "./daily.js";
+import { clearCurrentUserFromStorage, loadCurrentUserFromStorage, saveCurrentUserToStorage } from "./auth.js";
+import { computeItemPoints, sampleWithoutReplacement, shuffle } from "./session.js";
 
 let FAMOUS_STREET_INFOS = {};
 let MAIN_STREET_INFOS = {};
@@ -1763,16 +1787,6 @@ function buildUniqueStreetList(e) {
     Array.from(t.values())
   );
 }
-function sampleWithoutReplacement(e, t) {
-  const r = Array.from(e.keys());
-  return (shuffle(r), r.slice(0, t).map((t) => e[t]));
-}
-function shuffle(e) {
-  for (let t = e.length - 1; t > 0; t--) {
-    const r = Math.floor(Math.random() * (t + 1));
-    [e[t], e[r]] = [e[r], e[t]];
-  }
-}
 function setNewTarget() {
   const e = getGameMode();
   if ("monuments" === getZoneMode()) {
@@ -1909,9 +1923,6 @@ function updateLayoutSessionState() {
       : ((t.style.display = "none"), (t.__didAutoFocus = !1));
   }
   updateDailyResultPanel();
-}
-function computeItemPoints(e) {
-  return Math.max(0, 10 - e);
 }
 function handleStreetClick(e, t, r) {
   const a = getZoneMode();
@@ -2609,31 +2620,6 @@ function updateSessionProgressBar() {
 function resetWeightedBar() {
   "classique" === getGameMode() ? updateWeightedBar(1) : updateSessionProgressBar();
 }
-function saveCurrentUserToStorage(e) {
-  if (e)
-    try {
-      window.localStorage.setItem("camino_user", JSON.stringify(e));
-    } catch (e) {
-      console.warn("Impossible de sauvegarder l’utilisateur.", e);
-    }
-}
-function loadCurrentUserFromStorage() {
-  const e = window.localStorage.getItem("camino_user");
-  if (!e) return null;
-  try {
-    return JSON.parse(e);
-  } catch (e) {
-    return (console.error("Erreur parsing user storage", e), null);
-  }
-}
-function clearCurrentUserFromStorage() {
-  try {
-    window.localStorage.removeItem("camino_user");
-  } catch (e) {
-    console.warn("Impossible de supprimer l’utilisateur stocké.", e);
-  }
-}
-
 function renderUserSticker() {
   const sticker = document.getElementById("user-sticker"),
     loginHint = document.getElementById("login-hint");
@@ -3089,432 +3075,6 @@ function sendScoreToServer(e) {
       console.error("Erreur envoi score (synchrone) :", e);
     }
 }
-const TITLE_THRESHOLDS_BY_MODE = {
-  classique: {
-    "rues-celebres": { M: 60, H: 100, V: 140, MV: 180 },
-    "rues-principales": { M: 50, H: 90, V: 130, MV: 170 },
-    quartier: { M: 40, H: 80, V: 120, MV: 160 },
-    ville: { M: 30, H: 70, V: 110, MV: 150 },
-    monuments: { M: 40, H: 80, V: 120, MV: 160 },
-  },
-  marathon: {
-    "rues-celebres": { M: 10, H: 20, V: 35, MV: 55 },
-    "rues-principales": { M: 9, H: 18, V: 30, MV: 48 },
-    ville: { M: 8, H: 16, V: 28, MV: 44 },
-    monuments: { M: 9, H: 18, V: 30, MV: 46 },
-  },
-  chrono: {
-    "rues-celebres": { M: 7, H: 11, V: 16, MV: 22 },
-    "rues-principales": { M: 6, H: 10, V: 14, MV: 19 },
-    quartier: { M: 5, H: 8, V: 12, MV: 16 },
-    ville: { M: 4, H: 7, V: 10, MV: 14 },
-    monuments: { M: 5, H: 8, V: 12, MV: 16 },
-  },
-},
-  TITLE_NAMES = [
-    "🏛️ Maire de la Ville",
-    "💪 Vrai Marseillais",
-    "⚓ Habitué du Vieux-Port",
-    "🧒 Minot",
-    "🧳 Touriste",
-  ];
-function buildQuartierMarathonThresholds(e) {
-  const t = Math.max(1, parseInt(e, 10) || 55),
-    r = Math.min(t, Math.max(1, Math.ceil(0.1 * t))),
-    a = Math.min(t, Math.max(r + 1, Math.ceil(0.2 * t))),
-    n = Math.min(t, Math.max(a + 1, Math.ceil(0.35 * t))),
-    s = Math.min(t, Math.max(n + 1, Math.ceil(0.55 * t)));
-  return { M: r, H: a, V: n, MV: s };
-}
-function getTitleThresholds(e, t = "classique", r = 0) {
-  const a = TITLE_THRESHOLDS_BY_MODE[t] || TITLE_THRESHOLDS_BY_MODE.classique;
-  if ("marathon" === t && "quartier" === e) return buildQuartierMarathonThresholds(r);
-  return (
-    a[e] ||
-    a.quartier ||
-    TITLE_THRESHOLDS_BY_MODE.classique[e] ||
-    TITLE_THRESHOLDS_BY_MODE.classique.quartier
-  );
-}
-function getTitleScoreValue(e, t, r = "classique") {
-  if ("classique" === r) return parseFloat(e) || 0;
-  const a = parseFloat(t);
-  return Number.isFinite(a) ? a : parseFloat(e) || 0;
-}
-const SCORING_GAME_TYPES = ["classique", "marathon", "chrono"],
-  SCORING_ZONES = [
-    "rues-celebres",
-    "rues-principales",
-    "quartier",
-    "monuments",
-  ];
-function getGlobalRankLevelForTitleIndex(e) {
-  const parsed = parseInt(e, 10);
-  return Math.max(0, 4 - (isNaN(parsed) ? 4 : parsed));
-}
-function getGlobalRankTitleFromLevel(e) {
-  return e >= 4
-    ? TITLE_NAMES[0]
-    : e >= 3
-      ? TITLE_NAMES[1]
-      : e >= 2
-        ? TITLE_NAMES[2]
-        : e >= 1
-          ? TITLE_NAMES[3]
-          : TITLE_NAMES[4];
-}
-function buildScoringComboMap(e) {
-  const t = new Map();
-  return (
-    (e?.modes || []).forEach((e) => {
-      if (!e || !SCORING_GAME_TYPES.includes(e.game_type) || !SCORING_ZONES.includes(e.mode))
-        return;
-      t.set(`${e.mode}|${e.game_type}`, e);
-    }),
-    t
-  );
-}
-function hasReachedGlobalRank(e, t) {
-  const r = buildScoringComboMap(e);
-  return SCORING_GAME_TYPES.every((a) =>
-    SCORING_ZONES.every((n) => {
-      const s = r.get(`${n}|${a}`);
-      if (!s) return !1;
-      const i = getTitleThresholds(n, a, s.best_items_total || 0),
-        l = getTitleScoreValue(s.high_score, s.best_items_correct, a);
-      return "number" == typeof i?.[t] && l >= i[t];
-    }),
-  );
-}
-function getGlobalRankLevel(e) {
-  return hasReachedGlobalRank(e, "MV")
-    ? 4
-    : hasReachedGlobalRank(e, "V")
-      ? 3
-      : hasReachedGlobalRank(e, "H")
-        ? 2
-        : hasReachedGlobalRank(e, "M")
-          ? 1
-          : 0;
-}
-function getGlobalRankMeta(e) {
-  const t = getGlobalRankLevel(e);
-  return { level: t, title: getGlobalRankTitleFromLevel(t) };
-}
-
-const AVATAR_UNLOCKS = [
-  // Default (0 pts)
-  { emoji: '👤', reqScore: 0, reqTitleIdx: 4 },
-  { emoji: '🧑', reqScore: 0, reqTitleIdx: 4 },
-  { emoji: '👧', reqScore: 0, reqTitleIdx: 4 },
-  
-  // Minot (index 3)
-  { emoji: '🧒', reqScore: 50, reqTitleIdx: 3 },
-  { emoji: '🛴', reqScore: 50, reqTitleIdx: 3 },
-  { emoji: '🍕', reqScore: 50, reqTitleIdx: 3 },
-
-  // Habitué (index 2)
-  { emoji: '⚓', reqScore: 80, reqTitleIdx: 2 },
-  { emoji: '🐟', reqScore: 80, reqTitleIdx: 2 },
-  { emoji: '⛵', reqScore: 80, reqTitleIdx: 2 },
-  { emoji: '🌊', reqScore: 80, reqTitleIdx: 2 },
-
-  // Vrai Marseillais (index 1)
-  { emoji: '💪', reqScore: 120, reqTitleIdx: 1 },
-  { emoji: '☀️', reqScore: 120, reqTitleIdx: 1 },
-  { emoji: '🏖️', reqScore: 120, reqTitleIdx: 1 },
-  { emoji: '😎', reqScore: 120, reqTitleIdx: 1 },
-
-  // Maire (index 0)
-  { emoji: '🏛️', reqScore: 150, reqTitleIdx: 0 },
-  { emoji: '🦅', reqScore: 150, reqTitleIdx: 0, desc: 'Gabian' },
-  { emoji: '⚽', reqScore: 150, reqTitleIdx: 0 },
-  { emoji: '👑', reqScore: 150, reqTitleIdx: 0 },
-  
-  // Ville Spécial 
-  { 
-    emoji: '🚀',
-    name: "Astronaute",
-    desc: "Atteindre Minot sur la Ville Entière (Tous modes)",
-    check: (user) => hasReachedVilleRank(user, "M")
-  },
-  { 
-    emoji: '⭐️',
-    name: "Étoile",
-    desc: "Atteindre Habitué sur la Ville Entière (Tous modes)",
-    check: (user) => hasReachedVilleRank(user, "H")
-  },
-  { 
-    emoji: '🛸',
-    name: "Extraterrestre",
-    desc: "Atteindre Vrai Marseillais sur la Ville Entière (Tous modes)",
-    check: (user) => hasReachedVilleRank(user, "V")
-  },
-  { 
-    emoji: '👽',
-    name: "Alien",
-    desc: "Atteindre Maire sur la Ville Entière (Tous modes)",
-    check: (user) => hasReachedVilleRank(user, "MV")
-  }
-];
-
-function hasReachedVilleRank(user, rankLetter) {
-  const r = buildScoringComboMap(user);
-  return SCORING_GAME_TYPES.every((gameType) => {
-    const s = r.get(`ville|${gameType}`);
-    if (!s) return false;
-    const i = getTitleThresholds("ville", gameType, s.best_items_total || 0),
-      l = getTitleScoreValue(s.high_score, s.best_items_correct, gameType);
-    return typeof i?.[rankLetter] === "number" && l >= i[rankLetter];
-  });
-}
-function getPlayerTitle(e, t, r = "classique", a = 0, n = null) {
-  const s = getTitleThresholds(t, r, a),
-    i = getTitleScoreValue(e, n, r);
-  return i >= s.MV
-    ? TITLE_NAMES[0]
-    : i >= s.V
-      ? TITLE_NAMES[1]
-      : i >= s.H
-        ? TITLE_NAMES[2]
-        : i >= s.M
-          ? TITLE_NAMES[3]
-          : TITLE_NAMES[4];
-}
-const ZONE_LABELS = {
-  ville: "Ville entière",
-  "rues-principales": "Rues principales",
-  "rues-celebres": "Rues célèbres",
-  quartier: "Quartier",
-  monuments: "Monuments",
-},
-  GAME_LABELS = {
-    classique: "Classique",
-    marathon: "Marathon",
-    chrono: "Chrono",
-    lecture: "Lecture",
-  },
-  ZONE_ORDER = [
-    "rues-celebres",
-    "rues-principales",
-    "quartier",
-    "ville",
-    "monuments",
-  ],
-  GAME_ORDER = ["classique", "marathon", "chrono", "lecture"];
-function loadAllLeaderboards() {
-  const e = document.getElementById("leaderboard");
-  e &&
-    ((e.innerHTML =
-      '<div class="skeleton skeleton-line skeleton-line--50"></div><div class="skeleton skeleton-block"></div><div class="skeleton skeleton-block"></div>'),
-      Promise.all([
-        fetch(API_URL + "/api/leaderboards").then(res => {
-          if (!res.ok) throw new Error("HTTP " + res.status);
-          return res.json();
-        }),
-        fetch(API_URL + "/api/daily/leaderboard").then(res => {
-          if (!res.ok) return [];
-          return res.json();
-        }).catch(() => [])
-      ])
-        .then(([t, dailyRows]) => {
-          const r = Object.keys(t);
-          if (0 === r.length && 0 === dailyRows.length)
-            return void (e.innerHTML = "<p>Aucun score enregistré.</p>");
-
-          (e.innerHTML = "");
-
-          // 1. Build Daily Leaderboard first
-          if (dailyRows && dailyRows.length > 0) {
-            const dailyDetails = document.createElement("details");
-            dailyDetails.className = "leaderboard-zone-details";
-            dailyDetails.open = true; // explicitly keep daily open by default
-            const dailySummary = document.createElement("summary");
-
-            const todayStr = new Intl.DateTimeFormat('fr-FR', {
-              day: '2-digit', month: '2-digit', year: '2-digit'
-            }).format(new Date());
-
-            dailySummary.innerHTML = `<span class="leaderboard-zone-title">Daily du ${todayStr}</span>`;
-            dailyDetails.appendChild(dailySummary);
-
-            const dailyContent = document.createElement("div");
-            dailyContent.className = "leaderboard-zone-content";
-
-            const table = document.createElement("table");
-            table.className = "leaderboard-table";
-            table.innerHTML = "<thead><tr><th>#</th><th>Joueur</th><th>Essais</th></tr></thead>";
-
-            const tbody = document.createElement("tbody");
-            dailyRows.forEach((row, i) => {
-              const tr = document.createElement("tr");
-              const rank = (0 === i ? "🥇 " : 1 === i ? "🥈 " : 2 === i ? "🥉 " : "") || `${i + 1}`;
-              const pAvatar = row.avatar || '👤';
-              tr.innerHTML = `<td>${rank}</td><td><span class="leaderboard-avatar">${pAvatar}</span>${row.username || "Anonyme"}</td><td>${row.attempts_count}/7</td>`;
-              tbody.appendChild(tr);
-            });
-            table.appendChild(tbody);
-
-            const modeContainer = document.createElement("div");
-            modeContainer.className = "leaderboard-mode-container";
-            const modeTitle = document.createElement("h4");
-            modeTitle.className = "leaderboard-mode-title";
-            modeTitle.textContent = "Défi du Jour";
-            modeContainer.appendChild(modeTitle);
-
-            const section = document.createElement("div");
-            section.className = "leaderboard-section";
-            section.appendChild(table);
-            modeContainer.appendChild(section);
-
-            dailyContent.appendChild(modeContainer);
-            dailyDetails.appendChild(dailyContent);
-            e.appendChild(dailyDetails);
-          }
-
-          // 2. Process all other leaderboards
-          const a = {};
-          (r.forEach((e) => {
-            const r = e.split("|"),
-              n = r[0],
-              s = r[1],
-              i = r[2] || null,
-              l = t[e];
-            l &&
-              0 !== l.length &&
-              (a[n] || (a[n] = {}),
-                a[n][s] || (a[n][s] = []),
-                a[n][s].push({ quartierName: i, rows: l }));
-          }),
-            ZONE_ORDER.forEach((t) => {
-              if (!a[t]) return;
-              const r = a[t],
-                n = document.createElement("details");
-              n.className = "leaderboard-zone-details";
-              const s = document.createElement("summary"),
-                i = ZONE_LABELS[t] || t;
-              ((s.innerHTML = `<span class="leaderboard-zone-title">${i}</span>`), n.appendChild(s));
-              const l = document.createElement("div");
-              ((l.className = "leaderboard-zone-content"),
-                GAME_ORDER.forEach((e) => {
-                  if (!r[e]) return;
-                  const a = r[e],
-                    n = document.createElement("div");
-                  n.className = "leaderboard-mode-container";
-                  const s = document.createElement("h4");
-                  ((s.className = "leaderboard-mode-title"),
-                    (s.textContent = GAME_LABELS[e] || e),
-                    n.appendChild(s),
-                    a.sort((e, t) =>
-                      e.quartierName && t.quartierName
-                        ? e.quartierName.localeCompare(t.quartierName)
-                        : 0,
-                    ),
-                    a.forEach((r) => {
-                      const isQuartier = "quartier" === t && r.quartierName && "unknown" !== r.quartierName;
-                      const a = document.createElement(isQuartier ? "details" : "div");
-                      if (
-                        ((a.className = "leaderboard-section"),
-                          isQuartier)
-                      ) {
-                        const e = document.createElement("summary");
-                        ((e.className = "leaderboard-quartier-title"),
-                          (e.textContent = r.quartierName),
-                          a.appendChild(e));
-                      }
-                      const s = document.createElement("table");
-                      s.className = "leaderboard-table";
-                      const i = document.createElement("thead");
-                      let l = "<tr><th>#</th><th>Joueur</th>";
-                      l += "classique" === e ? "<th>Score</th>" : "<th>Rues trouvées</th>";
-                      "marathon" === e && (l += "<th>Max zone</th>");
-                      "chrono" === e && (l += "<th>Temps</th>");
-                      l += "<th>Parties</th></tr>";
-                      i.innerHTML = l;
-                      s.appendChild(i);
-                      const o = document.createElement("tbody"),
-                        u = document.createElement("tbody");
-                      if (
-                        ((u.className = "leaderboard-hidden-rows"),
-                          (u.style.display = "none"),
-                          r.rows.forEach((r, a) => {
-                            const n = document.createElement("tr"),
-                              s =
-                                (0 === a
-                                  ? "🥇 "
-                                  : 1 === a
-                                    ? "🥈 "
-                                    : 2 === a
-                                      ? "🥉 "
-                                      : "") || `${a + 1}`,
-                              i = getPlayerTitle(
-                                r.high_score || 0,
-                                t,
-                                e,
-                                r.items_total || 0,
-                                r.items_correct || 0,
-                              ),
-                              pAvatar = r.avatar || '👤';
-                            let l = `<td>${s}</td><td><span class="leaderboard-avatar">${pAvatar}</span>${r.username || "Anonyme"}<br><small class="leaderboard-player-meta">${i}</small></td>`;
-                            const scoreCell =
-                              "classique" === e
-                                ? "number" == typeof r.high_score
-                                  ? r.high_score.toFixed(1)
-                                  : "-"
-                                : `${r.items_correct || 0}`;
-                            ((l += `<td>${scoreCell}</td>`),
-                              "marathon" === e &&
-                              (l += `<td>${r.items_total || 0}</td>`),
-                              "chrono" === e &&
-                              (l += `<td>${(r.time_sec || 0).toFixed(1)}s</td>`),
-                              (l += `<td>${r.games_played || 0}</td>`),
-                              (n.innerHTML = l),
-                              a < LEADERBOARD_VISIBLE_ROWS
-                                ? o.appendChild(n)
-                                : u.appendChild(n));
-                          }),
-                          s.appendChild(o),
-                          s.appendChild(u),
-                          a.appendChild(s),
-                          r.rows.length > LEADERBOARD_VISIBLE_ROWS)
-                      ) {
-                        const e = document.createElement("div");
-                        e.className = "leaderboard-toggle-wrap";
-                        const t = document.createElement("button");
-                        ((t.className = "leaderboard-toggle-btn"),
-                          (t.textContent = "▼ Voir les autres scores"),
-                          (t.onclick = () => {
-                            "none" === u.style.display
-                              ? ((u.style.display = "table-row-group"),
-                                (t.textContent = "▲ Masquer les scores"))
-                              : ((u.style.display = "none"),
-                                (t.textContent = "▼ Voir les autres scores"));
-                          }),
-                          e.appendChild(t),
-                          a.appendChild(e));
-                      }
-                      n.appendChild(a);
-                    }),
-                    l.appendChild(n));
-                }),
-                n.appendChild(l),
-                e.appendChild(n));
-            }));
-
-          // 3. Fallback open logic if Daily isn't present
-          if (!dailyRows || dailyRows.length === 0) {
-            const n = e.querySelector("details");
-            n && (n.open = !0);
-          }
-        })
-        .catch((t) => {
-          (console.warn("Leaderboard indisponible :", t.message),
-            (e.innerHTML = "<p>Aucun score enregistré.</p>"));
-        }));
-}
-function loadLeaderboard(e, t, r) {
-  loadAllLeaderboards();
-}
 async function handleDailyModeClick() {
   if (currentUser && currentUser.token)
     try {
@@ -3678,7 +3238,11 @@ function renderDailyGuessHistory(e) {
           a >= 6 && dailyTargetData.streetName)
       )
         try {
-          const e = calculateStreetLength(dailyTargetData.streetName);
+          const e = calculateStreetLengthFromFeatures(
+            dailyTargetData.streetName,
+            allStreetFeatures,
+            normalizeName,
+          );
           if (e > 0) {
             const t =
               e >= 1e3 ? `${(e / 1e3).toFixed(1)} km` : `${Math.round(e)} m`;
@@ -3702,15 +3266,6 @@ function renderDailyGuessHistory(e) {
   } catch (err) {
     console.error("Error in renderDailyGuessHistory:", err);
   }
-}
-function getTodayDailyStorageDate() {
-  return new Date().toISOString().split("T")[0];
-}
-function getDailyGuessesStorageKey(e) {
-  return `${DAILY_GUESSES_STORAGE_PREFIX}${e}`;
-}
-function getDailyMetaStorageKey(e) {
-  return `${DAILY_META_STORAGE_PREFIX}${e}`;
 }
 function restoreDailyMetaFromStorage(e) {
   if (!e) return !1;
@@ -3844,28 +3399,10 @@ function updateDailyResultPanel() {
     };
 }
 
-function formatDailyDistanceForShare(e) {
-  return e >= 1e3 ? `${(e / 1e3).toFixed(1)} km` : `${Math.round(e)} m`;
-}
-function getDailyShareDateLabel() {
-  let e = null;
-  if (dailyTargetData && "string" == typeof dailyTargetData.date) {
-    const t = new Date(`${dailyTargetData.date}T12:00:00`);
-    Number.isNaN(t.getTime()) || (e = t);
-  }
-  return (
-    e || (e = new Date()),
-    new Intl.DateTimeFormat("fr-FR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    }).format(e)
-  );
-}
 function handleDailyShareText(e) {
   if (!dailyTargetData) return;
   const t = e.success ? e.attempts : "X",
-    r = getDailyShareDateLabel(),
+    r = getDailyShareDateLabel(dailyTargetData?.date),
     a = dailyTargetData.streetName || "Rue inconnue",
     n =
       dailyGuessHistory.length > 0
@@ -3917,7 +3454,7 @@ function handleDailyShareImage(e) {
     s = a / 2,
     i = e.success ? e.attempts : "X",
     l = dailyTargetData.streetName || "Rue inconnue",
-    o = getDailyShareDateLabel(),
+    o = getDailyShareDateLabel(dailyTargetData?.date),
     u =
       dailyGuessHistory.length > 0
         ? Math.min(...dailyGuessHistory.map((e) => e.distance))
@@ -4112,14 +3649,6 @@ function handleDailyShareImage(e) {
       showMessage("Image téléchargée !", "success"));
   }, "image/png");
 }
-function getDirectionArrow(e, t) {
-  const r = t[0] - e[0],
-    a = t[1] - e[1],
-    n = ((((180 * Math.atan2(r, a)) / Math.PI) % 360) + 360) % 360;
-  return ["⬆️", "↗️", "➡️", "↘️", "⬇️", "↙️", "⬅️", "↖️"][
-    Math.round(n / 45) % 8
-  ];
-}
 function saveDailyGuessesToStorage() {
   if (dailyTargetData && dailyTargetData.date)
     try {
@@ -4152,14 +3681,16 @@ function restoreDailyGuessesFromStorage(e) {
 }
 function cleanOldDailyGuessStorage(e) {
   try {
+    const guessesPrefix = getDailyGuessesStorageKey("");
+    const metaPrefix = getDailyMetaStorageKey("");
     for (let t = localStorage.length - 1; t >= 0; t--) {
       const r = localStorage.key(t);
       r &&
-        r.startsWith(DAILY_GUESSES_STORAGE_PREFIX) &&
+        r.startsWith(guessesPrefix) &&
         !r.endsWith(e) &&
         localStorage.removeItem(r);
       r &&
-        r.startsWith(DAILY_META_STORAGE_PREFIX) &&
+        r.startsWith(metaPrefix) &&
         !r.endsWith(e) &&
         localStorage.removeItem(r);
     }
@@ -4203,101 +3734,6 @@ function removeDailyHighlight() {
   dailyHighlightLayer &&
     map &&
     (map.removeLayer(dailyHighlightLayer), (dailyHighlightLayer = null));
-}
-function getDistanceMeters(e, t, r, a) {
-  const n = (e * Math.PI) / 180,
-    s = (r * Math.PI) / 180,
-    i = ((r - e) * Math.PI) / 180,
-    l = ((a - t) * Math.PI) / 180,
-    o =
-      Math.sin(i / 2) * Math.sin(i / 2) +
-      Math.cos(n) * Math.cos(s) * Math.sin(l / 2) * Math.sin(l / 2);
-  return 2 * Math.atan2(Math.sqrt(o), Math.sqrt(1 - o)) * 6371e3;
-}
-function pointToSegmentDistance(e, t, r, a, n, s) {
-  const i = 6371e3,
-    l = Math.cos((e * Math.PI) / 180),
-    o = (t * l * i * Math.PI) / 180,
-    u = (e * i * Math.PI) / 180,
-    d = (r * l * i * Math.PI) / 180,
-    c = (a * i * Math.PI) / 180,
-    m = (n * l * i * Math.PI) / 180 - d,
-    p = (s * i * Math.PI) / 180 - c,
-    g = o - d,
-    h = u - c,
-    y = m * m + p * p;
-  let v = 0;
-  0 !== y && (v = Math.max(0, Math.min(1, (g * m + h * p) / y)));
-  const f = d + v * m,
-    b = c + v * p,
-    S = (o - f) * (o - f) + (u - b) * (u - b);
-  return Math.sqrt(S);
-}
-function getDistanceToFeature(e, t, r) {
-  if (!r) return 0;
-  let a = 1 / 0;
-  function n(r) {
-    for (let n = 0; n < r.length - 1; n++) {
-      const [s, i] = r[n],
-        [l, o] = r[n + 1],
-        u = pointToSegmentDistance(e, t, s, i, l, o);
-      u < a && (a = u);
-    }
-  }
-  return (
-    "LineString" === r.type
-      ? n(r.coordinates)
-      : "MultiLineString" === r.type
-        ? r.coordinates.forEach(n)
-        : "Point" === r.type &&
-        (a = getDistanceMeters(e, t, r.coordinates[1], r.coordinates[0])),
-    a !== 1 / 0 ? a : 0
-  );
-}
-function calculateStreetLength(e) {
-  try {
-    if (!e || !allStreetFeatures) return 0;
-    const t = normalizeName(e),
-      r = allStreetFeatures.find(
-        (e) =>
-          e &&
-          e.properties &&
-          e.properties.name &&
-          normalizeName(e.properties.name) === t,
-      );
-    if (!r || !r.geometry || !r.geometry.coordinates) return 0;
-    let a = 0;
-    const n = r.geometry;
-    if ("LineString" === n.type)
-      for (let e = 0; e < n.coordinates.length - 1; e++) {
-        const [t, r] = n.coordinates[e],
-          [s, i] = n.coordinates[e + 1];
-        a += getDistanceMeters(r, t, i, s);
-      }
-    else if ("MultiLineString" === n.type)
-      for (const e of n.coordinates)
-        for (let t = 0; t < e.length - 1; t++) {
-          const [r, n] = e[t],
-            [s, i] = e[t + 1];
-          a += getDistanceMeters(n, r, i, s);
-        }
-    return a;
-  } catch (e) {
-    return (console.error("Error calculating street length:", e), 0);
-  }
-}
-function computeFeatureCentroid(e) {
-  const t = e.geometry;
-  let r = [];
-  if ("LineString" === t.type) r = t.coordinates;
-  else {
-    if ("MultiLineString" !== t.type)
-      return "Point" === t.type ? t.coordinates : [5.3698, 43.2965];
-    r = t.coordinates.flat();
-  }
-  if (0 === r.length) return [5.3698, 43.2965];
-  const a = r.reduce((e, t) => [e[0] + t[0], e[1] + t[1]], [0, 0]);
-  return [a[0] / r.length, a[1] / r.length];
 }
 function updateDailyUI() {
   const e = dailyTargetData ? dailyTargetData.userStatus : {},
