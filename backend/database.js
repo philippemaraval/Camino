@@ -141,7 +141,23 @@ async function addScore(userId, username, mode, gameType, score, itemsCorrect, i
   );
 }
 
-async function getLeaderboard(mode, gameType, quartierName = null, limit = 10) {
+function normalizeLeaderboardPeriod(period) {
+  return period === 'month' ? 'month' : 'all';
+}
+
+function getLeaderboardPeriodWhereClause(period, scoreAlias = 's') {
+  if (period !== 'month') {
+    return '';
+  }
+
+  return `
+    AND (${scoreAlias}.timestamp AT TIME ZONE 'Europe/Paris') >= date_trunc('month', timezone('Europe/Paris', NOW()))
+    AND (${scoreAlias}.timestamp AT TIME ZONE 'Europe/Paris') < (date_trunc('month', timezone('Europe/Paris', NOW())) + INTERVAL '1 month')
+  `;
+}
+
+async function getLeaderboard(mode, gameType, quartierName = null, limit = 10, options = {}) {
+  const period = normalizeLeaderboardPeriod(options.period);
   const params = [mode, gameType];
   let whereClause = `s.mode = $1 AND s.game_type = $2`;
 
@@ -152,6 +168,7 @@ async function getLeaderboard(mode, gameType, quartierName = null, limit = 10) {
     // Legacy scores with no quartier_name fallback
     whereClause += ` AND s.quartier_name IS NULL `;
   }
+  whereClause += getLeaderboardPeriodWhereClause(period, 's');
 
   const limitParam = `$${params.length + 1}`;
   params.push(limit);
@@ -216,9 +233,15 @@ async function getLeaderboard(mode, gameType, quartierName = null, limit = 10) {
   return res.rows;
 }
 
-async function getAllLeaderboards(limit = 100) { // Increased limit since client truncates it
+async function getAllLeaderboards(limit = 100, options = {}) { // Increased limit since client truncates it
+  const period = normalizeLeaderboardPeriod(options.period);
+  const periodWhereClause = getLeaderboardPeriodWhereClause(period, 's');
   const combos = await pool.query(
-    'SELECT DISTINCT mode, game_type, quartier_name FROM scores ORDER BY mode, game_type, quartier_name'
+    `SELECT DISTINCT mode, game_type, quartier_name
+     FROM scores s
+     WHERE 1 = 1
+     ${periodWhereClause}
+     ORDER BY mode, game_type, quartier_name`
   );
 
   const result = {};
@@ -227,7 +250,7 @@ async function getAllLeaderboards(limit = 100) { // Increased limit since client
     if (quartier_name) key += `|${quartier_name}`;
     else if (mode === 'quartier') key += `|unknown`; // fallback for old scores
 
-    result[key] = await getLeaderboard(mode, game_type, quartier_name, limit);
+    result[key] = await getLeaderboard(mode, game_type, quartier_name, limit, { period });
   }
   return result;
 }

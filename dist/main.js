@@ -187,6 +187,145 @@
     const scoreValue = getTitleScoreValue(score, itemsCorrect, gameType);
     return scoreValue >= thresholds.MV ? TITLE_NAMES[0] : scoreValue >= thresholds.V ? TITLE_NAMES[1] : scoreValue >= thresholds.H ? TITLE_NAMES[2] : scoreValue >= thresholds.M ? TITLE_NAMES[3] : TITLE_NAMES[4];
   }
+  function hasLeaderboardRows(boards) {
+    return Object.values(boards || {}).some((rows) => Array.isArray(rows) && rows.length > 0);
+  }
+  function appendZoneLeaderboards(rootElement, boards) {
+    const boardKeys = Object.keys(boards || {});
+    const groupedByZone = {};
+    boardKeys.forEach((key) => {
+      const [zoneMode, gameType, quartierNameOrNull] = key.split("|");
+      const rows = boards[key];
+      if (!rows || rows.length === 0) {
+        return;
+      }
+      if (!groupedByZone[zoneMode]) {
+        groupedByZone[zoneMode] = {};
+      }
+      if (!groupedByZone[zoneMode][gameType]) {
+        groupedByZone[zoneMode][gameType] = [];
+      }
+      groupedByZone[zoneMode][gameType].push({ quartierName: quartierNameOrNull || null, rows });
+    });
+    ZONE_ORDER.forEach((zoneMode) => {
+      if (!groupedByZone[zoneMode]) {
+        return;
+      }
+      const groupedByGameType = groupedByZone[zoneMode];
+      const zoneDetails = document.createElement("details");
+      zoneDetails.className = "leaderboard-zone-details";
+      const zoneSummary = document.createElement("summary");
+      zoneSummary.innerHTML = `<span class="leaderboard-zone-title">${ZONE_LABELS[zoneMode] || zoneMode}</span>`;
+      zoneDetails.appendChild(zoneSummary);
+      const zoneContent = document.createElement("div");
+      zoneContent.className = "leaderboard-zone-content";
+      GAME_ORDER.forEach((gameType) => {
+        if (!groupedByGameType[gameType]) {
+          return;
+        }
+        const sections = groupedByGameType[gameType];
+        const modeContainer = document.createElement("div");
+        modeContainer.className = "leaderboard-mode-container";
+        const modeTitle = document.createElement("h4");
+        modeTitle.className = "leaderboard-mode-title";
+        modeTitle.textContent = GAME_LABELS[gameType] || gameType;
+        modeContainer.appendChild(modeTitle);
+        sections.sort(
+          (left, right) => left.quartierName && right.quartierName ? left.quartierName.localeCompare(right.quartierName) : 0
+        );
+        sections.forEach((sectionData) => {
+          const isQuartierSection = zoneMode === "quartier" && sectionData.quartierName && sectionData.quartierName !== "unknown";
+          const section = document.createElement(isQuartierSection ? "details" : "div");
+          section.className = "leaderboard-section";
+          if (isQuartierSection) {
+            const quartierSummary = document.createElement("summary");
+            quartierSummary.className = "leaderboard-quartier-title";
+            quartierSummary.textContent = sectionData.quartierName;
+            section.appendChild(quartierSummary);
+          }
+          const table = document.createElement("table");
+          table.className = "leaderboard-table";
+          const thead = document.createElement("thead");
+          let header = "<tr><th>#</th><th>Joueur</th>";
+          header += gameType === "classique" ? "<th>Score</th>" : "<th>Rues trouv\xE9es</th>";
+          if (gameType === "marathon") {
+            header += "<th>Max zone</th>";
+          }
+          if (gameType === "chrono") {
+            header += "<th>Temps</th>";
+          }
+          header += "<th>Parties</th></tr>";
+          thead.innerHTML = header;
+          table.appendChild(thead);
+          const visibleTbody = document.createElement("tbody");
+          const hiddenTbody = document.createElement("tbody");
+          hiddenTbody.className = "leaderboard-hidden-rows";
+          hiddenTbody.style.display = "none";
+          sectionData.rows.forEach((row, index) => {
+            const tr = document.createElement("tr");
+            const rank = (index === 0 ? "\u{1F947} " : index === 1 ? "\u{1F948} " : index === 2 ? "\u{1F949} " : "") || `${index + 1}`;
+            const title = getPlayerTitle(
+              row.high_score || 0,
+              zoneMode,
+              gameType,
+              row.items_total || 0,
+              row.items_correct || 0
+            );
+            const playerAvatar = row.avatar || "\u{1F464}";
+            let rowHtml = `<td>${rank}</td><td><span class="leaderboard-avatar">${playerAvatar}</span>${row.username || "Anonyme"}<br><small class="leaderboard-player-meta">${title}</small></td>`;
+            const scoreCell = gameType === "classique" ? typeof row.high_score === "number" ? row.high_score.toFixed(1) : "-" : `${row.items_correct || 0}`;
+            rowHtml += `<td>${scoreCell}</td>`;
+            if (gameType === "marathon") {
+              rowHtml += `<td>${row.items_total || 0}</td>`;
+            }
+            if (gameType === "chrono") {
+              rowHtml += `<td>${(row.time_sec || 0).toFixed(1)}s</td>`;
+            }
+            rowHtml += `<td>${row.games_played || 0}</td>`;
+            tr.innerHTML = rowHtml;
+            if (index < LEADERBOARD_VISIBLE_ROWS) {
+              visibleTbody.appendChild(tr);
+            } else {
+              hiddenTbody.appendChild(tr);
+            }
+          });
+          table.appendChild(visibleTbody);
+          table.appendChild(hiddenTbody);
+          section.appendChild(table);
+          if (sectionData.rows.length > LEADERBOARD_VISIBLE_ROWS) {
+            const toggleWrap = document.createElement("div");
+            toggleWrap.className = "leaderboard-toggle-wrap";
+            const toggleButton = document.createElement("button");
+            toggleButton.className = "leaderboard-toggle-btn";
+            toggleButton.textContent = "\u25BC Voir les autres scores";
+            toggleButton.onclick = () => {
+              if (hiddenTbody.style.display === "none") {
+                hiddenTbody.style.display = "table-row-group";
+                toggleButton.textContent = "\u25B2 Masquer les scores";
+              } else {
+                hiddenTbody.style.display = "none";
+                toggleButton.textContent = "\u25BC Voir les autres scores";
+              }
+            };
+            toggleWrap.appendChild(toggleButton);
+            section.appendChild(toggleWrap);
+          }
+          modeContainer.appendChild(section);
+        });
+        zoneContent.appendChild(modeContainer);
+      });
+      zoneDetails.appendChild(zoneContent);
+      rootElement.appendChild(zoneDetails);
+    });
+  }
+  function getCurrentMonthlyLeaderboardLabel() {
+    const label = new Intl.DateTimeFormat("fr-FR", {
+      month: "long",
+      year: "numeric",
+      timeZone: "Europe/Paris"
+    }).format(/* @__PURE__ */ new Date());
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  }
   function loadAllLeaderboards() {
     const leaderboardRoot = document.getElementById("leaderboard");
     if (!leaderboardRoot) {
@@ -200,15 +339,23 @@
         }
         return response.json();
       }),
+      fetch(`${API_URL}/api/leaderboards?period=month`).then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+      }),
       fetch(`${API_URL}/api/daily/leaderboard`).then((response) => response.ok ? response.json() : []).catch(() => [])
-    ]).then(([allBoards, dailyRows]) => {
-      const allBoardKeys = Object.keys(allBoards);
-      if (allBoardKeys.length === 0 && (!dailyRows || dailyRows.length === 0)) {
+    ]).then(([allBoards, monthlyBoards, dailyRows]) => {
+      const hasAllTimeRows = hasLeaderboardRows(allBoards);
+      const hasMonthlyRows = hasLeaderboardRows(monthlyBoards);
+      const hasDailyRows = !!(dailyRows && dailyRows.length > 0);
+      if (!hasAllTimeRows && !hasMonthlyRows && !hasDailyRows) {
         leaderboardRoot.innerHTML = "<p>Aucun score enregistr\xE9.</p>";
         return;
       }
       leaderboardRoot.innerHTML = "";
-      if (dailyRows && dailyRows.length > 0) {
+      if (hasDailyRows) {
         const dailyDetails = document.createElement("details");
         dailyDetails.className = "leaderboard-zone-details";
         dailyDetails.open = true;
@@ -248,132 +395,25 @@
         dailyDetails.appendChild(dailyContent);
         leaderboardRoot.appendChild(dailyDetails);
       }
-      const groupedByZone = {};
-      allBoardKeys.forEach((key) => {
-        const [zoneMode, gameType, quartierNameOrNull] = key.split("|");
-        const rows = allBoards[key];
-        if (!rows || rows.length === 0) {
-          return;
-        }
-        if (!groupedByZone[zoneMode]) {
-          groupedByZone[zoneMode] = {};
-        }
-        if (!groupedByZone[zoneMode][gameType]) {
-          groupedByZone[zoneMode][gameType] = [];
-        }
-        groupedByZone[zoneMode][gameType].push({ quartierName: quartierNameOrNull || null, rows });
-      });
-      ZONE_ORDER.forEach((zoneMode) => {
-        if (!groupedByZone[zoneMode]) {
-          return;
-        }
-        const groupedByGameType = groupedByZone[zoneMode];
-        const zoneDetails = document.createElement("details");
-        zoneDetails.className = "leaderboard-zone-details";
-        const zoneSummary = document.createElement("summary");
-        zoneSummary.innerHTML = `<span class="leaderboard-zone-title">${ZONE_LABELS[zoneMode] || zoneMode}</span>`;
-        zoneDetails.appendChild(zoneSummary);
-        const zoneContent = document.createElement("div");
-        zoneContent.className = "leaderboard-zone-content";
-        GAME_ORDER.forEach((gameType) => {
-          if (!groupedByGameType[gameType]) {
-            return;
-          }
-          const sections = groupedByGameType[gameType];
-          const modeContainer = document.createElement("div");
-          modeContainer.className = "leaderboard-mode-container";
-          const modeTitle = document.createElement("h4");
-          modeTitle.className = "leaderboard-mode-title";
-          modeTitle.textContent = GAME_LABELS[gameType] || gameType;
-          modeContainer.appendChild(modeTitle);
-          sections.sort(
-            (left, right) => left.quartierName && right.quartierName ? left.quartierName.localeCompare(right.quartierName) : 0
-          );
-          sections.forEach((sectionData) => {
-            const isQuartierSection = zoneMode === "quartier" && sectionData.quartierName && sectionData.quartierName !== "unknown";
-            const section = document.createElement(isQuartierSection ? "details" : "div");
-            section.className = "leaderboard-section";
-            if (isQuartierSection) {
-              const quartierSummary = document.createElement("summary");
-              quartierSummary.className = "leaderboard-quartier-title";
-              quartierSummary.textContent = sectionData.quartierName;
-              section.appendChild(quartierSummary);
-            }
-            const table = document.createElement("table");
-            table.className = "leaderboard-table";
-            const thead = document.createElement("thead");
-            let header = "<tr><th>#</th><th>Joueur</th>";
-            header += gameType === "classique" ? "<th>Score</th>" : "<th>Rues trouv\xE9es</th>";
-            if (gameType === "marathon") {
-              header += "<th>Max zone</th>";
-            }
-            if (gameType === "chrono") {
-              header += "<th>Temps</th>";
-            }
-            header += "<th>Parties</th></tr>";
-            thead.innerHTML = header;
-            table.appendChild(thead);
-            const visibleTbody = document.createElement("tbody");
-            const hiddenTbody = document.createElement("tbody");
-            hiddenTbody.className = "leaderboard-hidden-rows";
-            hiddenTbody.style.display = "none";
-            sectionData.rows.forEach((row, index) => {
-              const tr = document.createElement("tr");
-              const rank = (index === 0 ? "\u{1F947} " : index === 1 ? "\u{1F948} " : index === 2 ? "\u{1F949} " : "") || `${index + 1}`;
-              const title = getPlayerTitle(
-                row.high_score || 0,
-                zoneMode,
-                gameType,
-                row.items_total || 0,
-                row.items_correct || 0
-              );
-              const playerAvatar = row.avatar || "\u{1F464}";
-              let rowHtml = `<td>${rank}</td><td><span class="leaderboard-avatar">${playerAvatar}</span>${row.username || "Anonyme"}<br><small class="leaderboard-player-meta">${title}</small></td>`;
-              const scoreCell = gameType === "classique" ? typeof row.high_score === "number" ? row.high_score.toFixed(1) : "-" : `${row.items_correct || 0}`;
-              rowHtml += `<td>${scoreCell}</td>`;
-              if (gameType === "marathon") {
-                rowHtml += `<td>${row.items_total || 0}</td>`;
-              }
-              if (gameType === "chrono") {
-                rowHtml += `<td>${(row.time_sec || 0).toFixed(1)}s</td>`;
-              }
-              rowHtml += `<td>${row.games_played || 0}</td>`;
-              tr.innerHTML = rowHtml;
-              if (index < LEADERBOARD_VISIBLE_ROWS) {
-                visibleTbody.appendChild(tr);
-              } else {
-                hiddenTbody.appendChild(tr);
-              }
-            });
-            table.appendChild(visibleTbody);
-            table.appendChild(hiddenTbody);
-            section.appendChild(table);
-            if (sectionData.rows.length > LEADERBOARD_VISIBLE_ROWS) {
-              const toggleWrap = document.createElement("div");
-              toggleWrap.className = "leaderboard-toggle-wrap";
-              const toggleButton = document.createElement("button");
-              toggleButton.className = "leaderboard-toggle-btn";
-              toggleButton.textContent = "\u25BC Voir les autres scores";
-              toggleButton.onclick = () => {
-                if (hiddenTbody.style.display === "none") {
-                  hiddenTbody.style.display = "table-row-group";
-                  toggleButton.textContent = "\u25B2 Masquer les scores";
-                } else {
-                  hiddenTbody.style.display = "none";
-                  toggleButton.textContent = "\u25BC Voir les autres scores";
-                }
-              };
-              toggleWrap.appendChild(toggleButton);
-              section.appendChild(toggleWrap);
-            }
-            modeContainer.appendChild(section);
-          });
-          zoneContent.appendChild(modeContainer);
-        });
-        zoneDetails.appendChild(zoneContent);
-        leaderboardRoot.appendChild(zoneDetails);
-      });
-      if (!dailyRows || dailyRows.length === 0) {
+      if (hasAllTimeRows) {
+        appendZoneLeaderboards(leaderboardRoot, allBoards);
+      }
+      const monthlyDetails = document.createElement("details");
+      monthlyDetails.className = "leaderboard-zone-details";
+      monthlyDetails.open = true;
+      const monthlySummary = document.createElement("summary");
+      monthlySummary.innerHTML = `<span class="leaderboard-zone-title">Classement mensuel \u2014 ${getCurrentMonthlyLeaderboardLabel()}</span>`;
+      monthlyDetails.appendChild(monthlySummary);
+      const monthlyContent = document.createElement("div");
+      monthlyContent.className = "leaderboard-zone-content";
+      if (hasMonthlyRows) {
+        appendZoneLeaderboards(monthlyContent, monthlyBoards);
+      } else {
+        monthlyContent.innerHTML = "<p>Aucun score ce mois-ci.</p>";
+      }
+      monthlyDetails.appendChild(monthlyContent);
+      leaderboardRoot.appendChild(monthlyDetails);
+      if (!hasDailyRows) {
         const firstDetails = leaderboardRoot.querySelector("details");
         if (firstDetails) {
           firstDetails.open = true;

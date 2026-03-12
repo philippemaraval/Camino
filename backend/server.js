@@ -157,8 +157,9 @@ app.get('/api/leaderboard', async (req, res) => {
         const mode = req.query.mode || req.query.zone_mode;
         const gameType = req.query.gameType || req.query.game_mode;
         if (!mode || !gameType) return res.status(400).json({ error: 'Missing mode or gameType' });
+        const period = req.query.period === 'month' ? 'month' : 'all';
 
-        const rows = await db.getLeaderboard(mode, gameType);
+        const rows = await db.getLeaderboard(mode, gameType, null, 10, { period });
         res.json(rows);
     } catch (err) {
         console.error('Leaderboard error:', err);
@@ -168,7 +169,8 @@ app.get('/api/leaderboard', async (req, res) => {
 
 app.get('/api/leaderboards', async (req, res) => {
     try {
-        const data = await db.getAllLeaderboards();
+        const period = req.query.period === 'month' ? 'month' : 'all';
+        const data = await db.getAllLeaderboards(100, { period });
         res.json(data);
     } catch (err) {
         console.error('Leaderboards error:', err);
