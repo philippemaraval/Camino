@@ -601,6 +601,182 @@
       unlocked: definition.check(profile)
     }));
   }
+  function toNumber(value, fallback = 0) {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  function weightedAverage(rows, key) {
+    let weightTotal = 0;
+    let weightedSum = 0;
+    rows.forEach((row) => {
+      const weight = toNumber(row == null ? void 0 : row.games_played, 0);
+      const value = toNumber(row == null ? void 0 : row[key], 0);
+      if (weight > 0) {
+        weightTotal += weight;
+        weightedSum += value * weight;
+      }
+    });
+    return weightTotal > 0 ? weightedSum / weightTotal : 0;
+  }
+  function getTrendMeta(weeklyProgress) {
+    const currentWindow = weeklyProgress.slice(-4);
+    const previousWindow = weeklyProgress.slice(-8, -4);
+    const currentAvg = weightedAverage(currentWindow, "avg_score");
+    const previousAvg = weightedAverage(previousWindow, "avg_score");
+    if (previousAvg <= 0 && currentAvg <= 0) {
+      return { icon: "\u2192", label: "Stable", delta: 0 };
+    }
+    if (previousAvg <= 0) {
+      return { icon: "\u2197", label: "En hausse", delta: currentAvg };
+    }
+    const delta = currentAvg - previousAvg;
+    if (delta > 1) {
+      return { icon: "\u2197", label: "En hausse", delta };
+    }
+    if (delta < -1) {
+      return { icon: "\u2198", label: "En baisse", delta };
+    }
+    return { icon: "\u2192", label: "Stable", delta };
+  }
+  function getModeLabel(mode, zoneLabels) {
+    return (zoneLabels == null ? void 0 : zoneLabels[mode]) || mode || "\u2014";
+  }
+  function getHeatClass(gamesPlayed, successRate) {
+    if (gamesPlayed < 3) {
+      return "profile-heat--unknown";
+    }
+    if (successRate >= 70) {
+      return "profile-heat--known";
+    }
+    if (successRate >= 45) {
+      return "profile-heat--mid";
+    }
+    return "profile-heat--weak";
+  }
+  function buildProfileCompactStatsHTML(profile, zoneLabels) {
+    const weeklyProgress = Array.isArray(profile.weekly_progress) ? profile.weekly_progress : [];
+    const quartierStats = Array.isArray(profile.quartier_stats) ? profile.quartier_stats : [];
+    const difficultyStats = Array.isArray(profile.difficulty_stats) ? profile.difficulty_stats : [];
+    const globalSuccessRate = weightedAverage(difficultyStats, "success_rate");
+    const globalAvgTime = weightedAverage(difficultyStats, "avg_time_sec");
+    const trend = getTrendMeta(weeklyProgress);
+    const weakestMode = [...difficultyStats].filter((row) => toNumber(row.games_played) > 2).sort((left, right) => toNumber(left.success_rate) - toNumber(right.success_rate))[0];
+    const insight = weakestMode ? `Zone \xE0 travailler: ${getModeLabel(weakestMode.mode, zoneLabels)} (${toNumber(weakestMode.success_rate).toFixed(1)}% de r\xE9ussite).` : "Joue quelques sessions pour d\xE9bloquer des insights personnalis\xE9s.";
+    const maxWeeklyGames = Math.max(1, ...weeklyProgress.map((row) => toNumber(row.games_played, 0)));
+    const weeklyChartHtml = weeklyProgress.length > 0 ? weeklyProgress.map((row) => {
+      const gamesPlayed = toNumber(row.games_played, 0);
+      const barHeight = gamesPlayed > 0 ? Math.max(4, Math.round(gamesPlayed / maxWeeklyGames * 44)) : 2;
+      const avgScore = toNumber(row.avg_score, 0).toFixed(1);
+      return `
+          <div class="profile-weekly-col" title="${row.label} : ${gamesPlayed} parties \u2022 score moyen ${avgScore}">
+            <div class="profile-weekly-bar" style="height:${barHeight}px"></div>
+            <span class="profile-weekly-col-label">${row.label}</span>
+          </div>`;
+    }).join("") : '<p class="profile-stats-empty">Pas assez de sessions pour afficher une \xE9volution.</p>';
+    const heatChipsHtml = quartierStats.length > 0 ? quartierStats.slice(0, 24).map((row) => {
+      const gamesPlayed = toNumber(row.games_played, 0);
+      const successRate = toNumber(row.success_rate, 0);
+      const heatClass = getHeatClass(gamesPlayed, successRate);
+      return `<span class="profile-heat-chip ${heatClass}" title="${row.quartier_name}: ${successRate.toFixed(1)}% \u2022 ${gamesPlayed} parties">${row.quartier_name}</span>`;
+    }).join("") : '<p class="profile-stats-empty">Aucune donn\xE9e quartier pour le moment.</p>';
+    const quartierRowsHtml = quartierStats.length > 0 ? quartierStats.slice(0, 10).map((row) => `
+      <tr>
+        <td>${row.quartier_name}</td>
+        <td>${toNumber(row.success_rate, 0).toFixed(1)}%</td>
+        <td>${toNumber(row.avg_time_sec, 0).toFixed(1)} s</td>
+      </tr>`).join("") : '<tr><td colspan="3">Aucune donn\xE9e disponible.</td></tr>';
+    const orderedModes = ["rues-celebres", "rues-principales", "quartier", "ville", "monuments"];
+    const difficultyMap = new Map(difficultyStats.map((row) => [row.mode, row]));
+    const difficultyRows = orderedModes.filter((mode) => difficultyMap.has(mode)).map((mode) => difficultyMap.get(mode));
+    const difficultyBarsHtml = difficultyRows.length > 0 ? difficultyRows.map((row) => {
+      const successRate = Math.max(0, Math.min(100, toNumber(row.success_rate, 0)));
+      const avgTime = toNumber(row.avg_time_sec, 0);
+      return `
+        <div class="profile-difficulty-row">
+          <div class="profile-difficulty-head">
+            <span>${getModeLabel(row.mode, zoneLabels)}</span>
+            <span>${successRate.toFixed(1)}%</span>
+          </div>
+          <div class="profile-difficulty-bar-track">
+            <div class="profile-difficulty-bar-fill" style="width:${successRate.toFixed(0)}%"></div>
+          </div>
+          <div class="profile-difficulty-meta">\u23F1 ${avgTime.toFixed(1)} s</div>
+        </div>`;
+    }).join("") : '<p class="profile-stats-empty">Aucune donn\xE9e de difficult\xE9 disponible.</p>';
+    return `
+    <section class="profile-compact-stats">
+      <div class="profile-compact-header">Mes stats (compact)</div>
+      <div class="profile-kpi-grid">
+        <div class="profile-kpi-card">
+          <span class="profile-kpi-value">${globalSuccessRate.toFixed(1)}%</span>
+          <span class="profile-kpi-label">R\xE9ussite globale</span>
+        </div>
+        <div class="profile-kpi-card">
+          <span class="profile-kpi-value">${globalAvgTime.toFixed(1)} s</span>
+          <span class="profile-kpi-label">Temps moyen</span>
+        </div>
+        <div class="profile-kpi-card">
+          <span class="profile-kpi-value">${trend.icon} ${trend.delta >= 0 ? "+" : ""}${trend.delta.toFixed(1)}</span>
+          <span class="profile-kpi-label">Progression</span>
+        </div>
+      </div>
+      <p class="profile-compact-insight">${insight}</p>
+
+      <div class="profile-stats-accordion" id="profile-stats-accordion">
+        <details class="profile-stats-section" open>
+          <summary>\xC9volution hebdomadaire</summary>
+          <div class="profile-stats-section-content">
+            <div class="profile-weekly-chart">${weeklyChartHtml}</div>
+          </div>
+        </details>
+
+        <details class="profile-stats-section">
+          <summary>Carte de chaleur quartiers</summary>
+          <div class="profile-stats-section-content">
+            <div class="profile-heat-grid">${heatChipsHtml}</div>
+          </div>
+        </details>
+
+        <details class="profile-stats-section">
+          <summary>Temps moyen par quartier</summary>
+          <div class="profile-stats-section-content">
+            <table class="profile-mini-table">
+              <thead>
+                <tr><th>Quartier</th><th>R\xE9ussite</th><th>Temps</th></tr>
+              </thead>
+              <tbody>${quartierRowsHtml}</tbody>
+            </table>
+          </div>
+        </details>
+
+        <details class="profile-stats-section">
+          <summary>R\xE9ussite par difficult\xE9</summary>
+          <div class="profile-stats-section-content">
+            <div class="profile-difficulty-list">${difficultyBarsHtml}</div>
+          </div>
+        </details>
+      </div>
+    </section>`;
+  }
+  function bindSingleOpenAccordion(container) {
+    const accordion = container == null ? void 0 : container.querySelector("#profile-stats-accordion");
+    if (!accordion) {
+      return;
+    }
+    const sections = Array.from(accordion.querySelectorAll("details"));
+    sections.forEach((section) => {
+      section.addEventListener("toggle", () => {
+        if (!section.open) {
+          return;
+        }
+        sections.forEach((other) => {
+          if (other !== section) {
+            other.open = false;
+          }
+        });
+      });
+    });
+  }
   function renderUserStickerRuntime(currentUser2) {
     const sticker = document.getElementById("user-sticker");
     const loginHint = document.getElementById("login-hint");
@@ -769,8 +945,10 @@
             <span class="profile-stat-label">Daily \u2705</span>
           </div>
         </div>`;
+      html += buildProfileCompactStatsHTML(profile, zoneLabels);
       if (profile.modes && profile.modes.length > 0) {
-        html += '<div class="profile-modes-title">D\xE9tail par mode</div>';
+        html += '<details class="profile-section-collapsible">';
+        html += '<summary class="profile-section-title">D\xE9tail par mode</summary>';
         html += '<div class="profile-modes">';
         profile.modes.forEach((modeEntry) => {
           const zoneLabel = zoneLabels[modeEntry.mode] || modeEntry.mode;
@@ -795,7 +973,7 @@
               <div class="profile-mode-title">${title}</div>
             </div>`;
         });
-        html += "</div>";
+        html += "</div></details>";
       }
       if (dailyTotalDays > 0) {
         html += `
@@ -808,7 +986,8 @@
       const badges = computeBadgesRuntime(profile, hasReachedGlobalRank2);
       const unlocked = badges.filter((badge) => badge.unlocked);
       const locked = badges.filter((badge) => !badge.unlocked);
-      html += `<div class="profile-badges-title">Succ\xE8s (${unlocked.length}/${badges.length})</div>`;
+      html += `<details class="profile-section-collapsible">`;
+      html += `<summary class="profile-badges-title">Succ\xE8s (${unlocked.length}/${badges.length})</summary>`;
       html += '<div class="profile-badges-grid">';
       unlocked.forEach((badge) => {
         html += `<div class="profile-badge unlocked" tabindex="0" title="${badge.name}
@@ -826,10 +1005,11 @@
           <span class="badge-name">${badge.name}</span>
         </div>`;
       });
-      html += "</div>";
+      html += "</div></details>";
       html += `<div class="profile-member-since">Membre depuis le ${memberSince}</div>`;
       profileContent.innerHTML = html;
       initAvatarSelector2(profile.avatar || "\u{1F464}", globalRankMeta.level);
+      bindSingleOpenAccordion(profileContent);
     }).catch((error) => {
       console.warn("Profile error:", error.message);
       profileContent.innerHTML = '<p class="profile-unavailable">Profil indisponible.</p>';

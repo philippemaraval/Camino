@@ -422,6 +422,91 @@ async function getUserStats(userId) {
     [userId]
   );
 
+  const weeklyProgress = await pool.query(
+    `WITH weeks AS (
+       SELECT generate_series(
+         date_trunc('week', timezone('Europe/Paris', NOW())) - interval '11 weeks',
+         date_trunc('week', timezone('Europe/Paris', NOW())),
+         interval '1 week'
+       ) AS week_start
+     ),
+     agg AS (
+       SELECT
+         date_trunc('week', timestamp AT TIME ZONE 'Europe/Paris') AS week_start,
+         COUNT(*)::int AS games_played,
+         ROUND(AVG(score)::numeric, 1) AS avg_score,
+         ROUND(
+           AVG(
+             CASE
+               WHEN items_total > 0 THEN (items_correct::double precision * 100.0 / items_total::double precision)
+               ELSE NULL
+             END
+           )::numeric,
+           1
+         ) AS success_rate,
+         ROUND(AVG(NULLIF(time_sec, 0))::numeric, 1) AS avg_time_sec
+       FROM scores
+       WHERE user_id = $1
+       GROUP BY 1
+     )
+     SELECT
+       TO_CHAR(w.week_start, 'DD/MM') AS label,
+       COALESCE(a.games_played, 0) AS games_played,
+       COALESCE(a.avg_score, 0) AS avg_score,
+       COALESCE(a.success_rate, 0) AS success_rate,
+       COALESCE(a.avg_time_sec, 0) AS avg_time_sec
+     FROM weeks w
+     LEFT JOIN agg a ON a.week_start = w.week_start
+     ORDER BY w.week_start ASC`,
+    [userId]
+  );
+
+  const quartierStats = await pool.query(
+    `SELECT
+       quartier_name,
+       COUNT(*)::int AS games_played,
+       ROUND(
+         AVG(
+           CASE
+             WHEN items_total > 0 THEN (items_correct::double precision * 100.0 / items_total::double precision)
+             ELSE NULL
+           END
+         )::numeric,
+         1
+       ) AS success_rate,
+       ROUND(AVG(NULLIF(time_sec, 0))::numeric, 1) AS avg_time_sec,
+       ROUND(MAX(score)::numeric, 1) AS best_score
+     FROM scores
+     WHERE user_id = $1
+       AND quartier_name IS NOT NULL
+       AND quartier_name <> ''
+     GROUP BY quartier_name
+     ORDER BY games_played DESC, success_rate DESC, quartier_name ASC
+     LIMIT 40`,
+    [userId]
+  );
+
+  const difficultyStats = await pool.query(
+    `SELECT
+       mode,
+       COUNT(*)::int AS games_played,
+       ROUND(
+         AVG(
+           CASE
+             WHEN items_total > 0 THEN (items_correct::double precision * 100.0 / items_total::double precision)
+             ELSE NULL
+           END
+         )::numeric,
+         1
+       ) AS success_rate,
+       ROUND(AVG(NULLIF(time_sec, 0))::numeric, 1) AS avg_time_sec
+     FROM scores
+     WHERE user_id = $1
+     GROUP BY mode
+     ORDER BY mode`,
+    [userId]
+  );
+
   // Daily challenge stats (basic)
   const dailyStats = await pool.query(
     `SELECT COUNT(*) as total_days,
@@ -496,6 +581,9 @@ async function getUserStats(userId) {
     overall: overall.rows[0] || { total_games: 0, best_score: 0, avg_score: 0 },
     bestMode: bestMode.rows[0] || null,
     modes: modeStats.rows,
+    weekly_progress: weeklyProgress.rows || [],
+    quartier_stats: quartierStats.rows || [],
+    difficulty_stats: difficultyStats.rows || [],
     daily: {
       ...(dailyStats.rows[0] || { total_days: 0, successes: 0, avg_attempts: 0 }),
       current_streak: currentStreak,
