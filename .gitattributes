@@ -1,2 +1,0 @@
-data/marseille_rues_enrichi.geojson filter=lfs diff=lfs merge=lfs -text
-backend/data/marseille_rues_enrichi.geojson filter=lfs diff=lfs merge=lfs -text

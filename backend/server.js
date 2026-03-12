@@ -202,9 +202,24 @@ try {
 
 function extractStreetGeometry(streetName) {
     try {
-        const geoPath = path.join(__dirname, 'data', 'marseille_rues_enrichi.geojson');
-        const raw = fs.readFileSync(geoPath, 'utf8');
-        const data = JSON.parse(raw);
+        const candidateGeoPaths = [
+            path.join(__dirname, 'data', 'marseille_rues_light.geojson'),
+            path.join(__dirname, 'data', 'marseille_rues_enrichi.geojson'),
+        ];
+        let data = null;
+        for (const geoPath of candidateGeoPaths) {
+            try {
+                const raw = fs.readFileSync(geoPath, 'utf8');
+                const parsed = JSON.parse(raw);
+                if (parsed && Array.isArray(parsed.features)) {
+                    data = parsed;
+                    break;
+                }
+            } catch (readErr) {
+                // Try next candidate file.
+            }
+        }
+        if (!data) return null;
         const normalizedTarget = streetName.toLowerCase().trim();
         for (const f of data.features) {
             if (f.properties && f.properties.name &&
