@@ -388,6 +388,567 @@
     loadAllLeaderboards();
   }
 
+  // src/profile-runtime.js
+  function getBadgeDefinitions(hasReachedGlobalRank2) {
+    return [
+      {
+        id: "first_game",
+        emoji: "\u{1F3AE}",
+        name: "Premi\xE8re Partie",
+        desc: "Terminer une session",
+        check: (profile) => {
+          var _a;
+          return (parseInt((_a = profile.overall) == null ? void 0 : _a.total_games) || 0) >= 1;
+        }
+      },
+      {
+        id: "games_10",
+        emoji: "\u{1F51F}",
+        name: "25 Parties",
+        desc: "Jouer 25 sessions",
+        check: (profile) => {
+          var _a;
+          return (parseInt((_a = profile.overall) == null ? void 0 : _a.total_games) || 0) >= 25;
+        }
+      },
+      {
+        id: "games_50",
+        emoji: "\u{1F4AF}",
+        name: "Habitu\xE9",
+        desc: "Jouer 100 sessions",
+        check: (profile) => {
+          var _a;
+          return (parseInt((_a = profile.overall) == null ? void 0 : _a.total_games) || 0) >= 100;
+        }
+      },
+      {
+        id: "games_100",
+        emoji: "\u{1F48E}",
+        name: "V\xE9t\xE9ran",
+        desc: "Jouer 250 sessions",
+        check: (profile) => {
+          var _a;
+          return (parseInt((_a = profile.overall) == null ? void 0 : _a.total_games) || 0) >= 250;
+        }
+      },
+      {
+        id: "minot",
+        emoji: "\u{1F9D2}",
+        name: "Minot",
+        desc: "Atteindre Minot dans tous les modes et toutes les zones",
+        check: (profile) => hasReachedGlobalRank2(profile, "M")
+      },
+      {
+        id: "habitue",
+        emoji: "\u2693",
+        name: "Habitu\xE9 du Vieux-Port",
+        desc: "Atteindre Habitu\xE9 dans tous les modes et toutes les zones",
+        check: (profile) => hasReachedGlobalRank2(profile, "H")
+      },
+      {
+        id: "vrai",
+        emoji: "\u{1F4AA}",
+        name: "Vrai Marseillais",
+        desc: "Atteindre Vrai Marseillais dans tous les modes et toutes les zones",
+        check: (profile) => hasReachedGlobalRank2(profile, "V")
+      },
+      {
+        id: "maire",
+        emoji: "\u{1F3DB}\uFE0F",
+        name: "Maire de la Ville",
+        desc: "Atteindre Maire dans tous les modes et toutes les zones",
+        check: (profile) => hasReachedGlobalRank2(profile, "MV")
+      },
+      {
+        id: "celebres",
+        emoji: "\u2B50",
+        name: "\xC9toile de la Caneb",
+        desc: "Jouer en Rues C\xE9l\xE8bres",
+        check: (profile) => (profile.modes || []).some((modeEntry) => modeEntry.mode === "rues-celebres")
+      },
+      {
+        id: "ville",
+        emoji: "\u{1F3D9}\uFE0F",
+        name: "Explorateur",
+        desc: "Jouer en Ville Enti\xE8re",
+        check: (profile) => (profile.modes || []).some((modeEntry) => modeEntry.mode === "ville")
+      },
+      {
+        id: "monuments",
+        emoji: "\u{1F5FF}",
+        name: "Touriste Culturel",
+        desc: "Jouer en mode Monuments",
+        check: (profile) => (profile.modes || []).some((modeEntry) => modeEntry.mode === "monuments")
+      },
+      {
+        id: "all_zones",
+        emoji: "\u{1F9ED}",
+        name: "Globe-trotter",
+        desc: "Jouer dans chaque zone",
+        check: (profile) => {
+          const playedModes = new Set((profile.modes || []).map((modeEntry) => modeEntry.mode));
+          return [
+            "ville",
+            "quartier",
+            "rues-principales",
+            "rues-celebres",
+            "monuments"
+          ].every((mode) => playedModes.has(mode));
+        }
+      },
+      {
+        id: "daily_first",
+        emoji: "\u{1F4C5}",
+        name: "Premier Daily",
+        desc: "R\xE9ussir un Daily Challenge",
+        check: (profile) => {
+          var _a;
+          return (parseInt((_a = profile.daily) == null ? void 0 : _a.successes) || 0) >= 1;
+        }
+      },
+      {
+        id: "daily_5",
+        emoji: "\u{1F525}",
+        name: "S\xE9rie de 10",
+        desc: "10 Daily Challenges r\xE9ussis d'affil\xE9e",
+        check: (profile) => {
+          var _a;
+          return (parseInt((_a = profile.daily) == null ? void 0 : _a.max_streak) || 0) >= 10;
+        }
+      },
+      {
+        id: "daily_10",
+        emoji: "\u26A1",
+        name: "S\xE9rie de 20",
+        desc: "20 Daily Challenges r\xE9ussis d'affil\xE9e",
+        check: (profile) => {
+          var _a;
+          return (parseInt((_a = profile.daily) == null ? void 0 : _a.max_streak) || 0) >= 20;
+        }
+      },
+      {
+        id: "daily_30",
+        emoji: "\u{1F3C6}",
+        name: "Champion du Mois",
+        desc: "50 Daily Challenges r\xE9ussis d'affil\xE9e",
+        check: (profile) => {
+          var _a;
+          return (parseInt((_a = profile.daily) == null ? void 0 : _a.max_streak) || 0) >= 50;
+        }
+      },
+      {
+        id: "perfect",
+        emoji: "\u{1F3AF}",
+        name: "Sans Faute",
+        desc: "Score de 100 dans une session",
+        check: (profile) => {
+          var _a;
+          return (parseFloat((_a = profile.overall) == null ? void 0 : _a.best_score) || 0) >= 100;
+        }
+      },
+      {
+        id: "multi_mode",
+        emoji: "\u{1F31F}",
+        name: "Polyvalent",
+        desc: "Jouer dans 3 modes de jeu diff\xE9rents",
+        check: (profile) => new Set((profile.modes || []).map((modeEntry) => modeEntry.game_type)).size >= 3
+      }
+    ];
+  }
+  function computeBadgesRuntime(profile, hasReachedGlobalRank2) {
+    return getBadgeDefinitions(hasReachedGlobalRank2).map((definition) => ({
+      ...definition,
+      unlocked: definition.check(profile)
+    }));
+  }
+  function renderUserStickerRuntime(currentUser2) {
+    const sticker = document.getElementById("user-sticker");
+    const loginHint = document.getElementById("login-hint");
+    if (!sticker) {
+      return;
+    }
+    if (currentUser2 && currentUser2.username) {
+      const avatarValue = currentUser2.avatar || "\u{1F464}";
+      const avatarEl = document.createElement("span");
+      const nameEl = document.createElement("span");
+      avatarEl.className = "user-sticker-avatar";
+      avatarEl.textContent = avatarValue;
+      nameEl.className = "user-sticker-name";
+      nameEl.textContent = currentUser2.username;
+      sticker.replaceChildren(avatarEl, nameEl);
+      sticker.style.display = "inline-flex";
+      if (loginHint) {
+        loginHint.style.display = "none";
+      }
+      return;
+    }
+    sticker.textContent = "";
+    sticker.style.display = "none";
+    if (loginHint) {
+      loginHint.style.display = "";
+    }
+  }
+  function updateUserUIRuntime({
+    currentUser: currentUser2,
+    renderUserSticker: renderUserSticker2,
+    loadProfile: loadProfile2
+  }) {
+    const currentUserLabel = document.getElementById("current-user-label");
+    const authBlock = document.querySelector(".auth-block");
+    const logoutBtn = document.getElementById("logout-btn");
+    const dailyModeBtn = document.getElementById("daily-mode-btn");
+    if (currentUser2 && currentUser2.username) {
+      if (currentUserLabel) {
+        currentUserLabel.textContent = `Connect\xE9 en tant que ${currentUser2.username}`;
+      }
+      renderUserSticker2();
+      if (authBlock) {
+        authBlock.querySelectorAll("input").forEach((input) => {
+          input.style.display = "none";
+        });
+        authBlock.querySelectorAll("button:not(#logout-btn)").forEach((button) => {
+          button.style.display = "none";
+        });
+      }
+      if (logoutBtn) {
+        logoutBtn.style.display = "inline-block";
+      }
+      if (dailyModeBtn) {
+        dailyModeBtn.style.display = "inline-flex";
+      }
+      const profilePanel2 = document.getElementById("profile-panel");
+      if (profilePanel2) {
+        profilePanel2.style.display = "block";
+      }
+      loadProfile2();
+      return;
+    }
+    if (currentUserLabel) {
+      currentUserLabel.textContent = "Non connect\xE9.";
+    }
+    renderUserSticker2();
+    if (authBlock) {
+      authBlock.querySelectorAll("input").forEach((input) => {
+        input.style.display = "";
+      });
+      authBlock.querySelectorAll("button:not(#logout-btn)").forEach((button) => {
+        button.style.display = "";
+      });
+    }
+    if (logoutBtn) {
+      logoutBtn.style.display = "none";
+    }
+    if (dailyModeBtn) {
+      dailyModeBtn.style.display = "none";
+    }
+    const profilePanel = document.getElementById("profile-panel");
+    if (profilePanel) {
+      profilePanel.style.display = "none";
+    }
+  }
+  function loadProfileRuntime({
+    currentUser: currentUser2,
+    apiUrl,
+    saveCurrentUserToStorage: saveCurrentUserToStorage2,
+    renderUserSticker: renderUserSticker2,
+    getGlobalRankMeta: getGlobalRankMeta2,
+    getPlayerTitle: getPlayerTitle2,
+    zoneLabels,
+    gameLabels,
+    hasReachedGlobalRank: hasReachedGlobalRank2,
+    initAvatarSelector: initAvatarSelector2
+  }) {
+    if (!currentUser2 || !currentUser2.token) {
+      return;
+    }
+    const profileContent = document.getElementById("profile-content");
+    if (!profileContent) {
+      return;
+    }
+    profileContent.innerHTML = '<div class="skeleton skeleton-avatar"></div><div class="skeleton skeleton-line skeleton-line--60"></div><div class="skeleton skeleton-block"></div><div class="skeleton skeleton-line skeleton-line--80"></div>';
+    fetch(`${apiUrl}/api/profile`, {
+      headers: { Authorization: `Bearer ${currentUser2.token}` }
+    }).then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return response.json();
+    }).then((profile) => {
+      var _a, _b, _c, _d, _e, _f, _g, _h;
+      if (currentUser2) {
+        const nextAvatar = profile.avatar || "\u{1F464}";
+        const nextUsername = profile.username || currentUser2.username;
+        const changed = currentUser2.avatar !== nextAvatar || currentUser2.username !== nextUsername;
+        currentUser2.avatar = nextAvatar;
+        currentUser2.username = nextUsername;
+        if (changed) {
+          saveCurrentUserToStorage2(currentUser2);
+        }
+        renderUserSticker2();
+      }
+      const bestScore = parseFloat((_a = profile.overall) == null ? void 0 : _a.best_score) || 0;
+      const globalRankMeta = getGlobalRankMeta2(profile);
+      const globalTitle = globalRankMeta.title;
+      const totalGames = parseInt((_b = profile.overall) == null ? void 0 : _b.total_games) || 0;
+      const averageScore = parseFloat((_c = profile.overall) == null ? void 0 : _c.avg_score) || 0;
+      const dailyTotalDays = parseInt((_d = profile.daily) == null ? void 0 : _d.total_days) || 0;
+      const dailySuccesses = parseInt((_e = profile.daily) == null ? void 0 : _e.successes) || 0;
+      const dailyAverageAttempts = parseFloat((_f = profile.daily) == null ? void 0 : _f.avg_attempts) || 0;
+      const memberSince = profile.memberSince ? new Date(profile.memberSince).toLocaleDateString("fr-FR", {
+        day: "numeric",
+        month: "long",
+        year: "numeric"
+      }) : "\u2014";
+      let html = `
+        <div class="profile-header">
+          <div class="profile-avatar">
+            ${profile.avatar || "\u{1F464}"}
+            <button type="button" class="edit-avatar-badge" id="btn-edit-avatar" title="Changer d'avatar" aria-label="Changer d'avatar">\u270F\uFE0F</button>
+          </div>
+          <div class="profile-info">
+            <div class="profile-name">${profile.username}</div>
+            <div class="profile-title">${globalTitle}</div>
+          </div>
+        </div>
+
+        <div class="profile-stats-grid">
+          <div class="profile-stat">
+            <span class="profile-stat-value">${totalGames}</span>
+            <span class="profile-stat-label">Parties</span>
+          </div>
+          <div class="profile-stat">
+            <span class="profile-stat-value">${bestScore.toFixed(1)}</span>
+            <span class="profile-stat-label">Meilleur</span>
+          </div>
+          <div class="profile-stat">
+            <span class="profile-stat-value">${averageScore}</span>
+            <span class="profile-stat-label">Moyenne</span>
+          </div>
+          <div class="profile-stat">
+            <span class="profile-stat-value">${dailySuccesses}/${dailyTotalDays}</span>
+            <span class="profile-stat-label">Daily \u2705</span>
+          </div>
+        </div>`;
+      if (profile.modes && profile.modes.length > 0) {
+        html += '<div class="profile-modes-title">D\xE9tail par mode</div>';
+        html += '<div class="profile-modes">';
+        profile.modes.forEach((modeEntry) => {
+          const zoneLabel = zoneLabels[modeEntry.mode] || modeEntry.mode;
+          const gameLabel = gameLabels[modeEntry.game_type] || modeEntry.game_type;
+          const highScore = parseFloat(modeEntry.high_score) || 0;
+          const scoreLabel = modeEntry.game_type === "classique" ? highScore.toFixed(1) : String(Math.round(highScore));
+          const title = getPlayerTitle2(
+            highScore,
+            modeEntry.mode,
+            modeEntry.game_type,
+            modeEntry.best_items_total || 0,
+            modeEntry.best_items_correct || 0
+          );
+          html += `
+            <div class="profile-mode-row">
+              <div class="profile-mode-name">${zoneLabel} \u2014 ${gameLabel}</div>
+              <div class="profile-mode-details">
+                <span>\u{1F3C6} ${scoreLabel}</span>
+                <span>\u{1F4CA} \xD8${parseFloat(modeEntry.avg_score).toFixed(1)}</span>
+                <span>\u{1F3AE} ${modeEntry.games_played}</span>
+              </div>
+              <div class="profile-mode-title">${title}</div>
+            </div>`;
+        });
+        html += "</div>";
+      }
+      if (dailyTotalDays > 0) {
+        html += `
+          <div class="profile-daily-summary">
+            <span>\u{1F4C5} Daily : ${dailyAverageAttempts} essais en moyenne</span>
+            ${((_g = profile.daily) == null ? void 0 : _g.current_streak) > 0 ? `<br><span class="profile-daily-current-streak">\u{1F525} S\xE9rie actuelle : ${profile.daily.current_streak}</span>` : ""}
+            ${((_h = profile.daily) == null ? void 0 : _h.max_streak) > 0 ? `<br><span class="profile-daily-best-streak">\u{1F3C6} Meilleure s\xE9rie : ${profile.daily.max_streak}</span>` : ""}
+          </div>`;
+      }
+      const badges = computeBadgesRuntime(profile, hasReachedGlobalRank2);
+      const unlocked = badges.filter((badge) => badge.unlocked);
+      const locked = badges.filter((badge) => !badge.unlocked);
+      html += `<div class="profile-badges-title">Succ\xE8s (${unlocked.length}/${badges.length})</div>`;
+      html += '<div class="profile-badges-grid">';
+      unlocked.forEach((badge) => {
+        html += `<div class="profile-badge unlocked" tabindex="0" title="${badge.name}
+\u2705 ${badge.desc}" data-tooltip="${badge.name}
+\u2705 ${badge.desc}" aria-label="${badge.name} d\xE9bloqu\xE9. ${badge.desc}">
+          <span class="badge-emoji">${badge.emoji}</span>
+          <span class="badge-name">${badge.name}</span>
+        </div>`;
+      });
+      locked.forEach((badge) => {
+        html += `<div class="profile-badge locked" tabindex="0" title="${badge.name}
+\u{1F512} ${badge.desc}" data-tooltip="${badge.name}
+\u{1F512} ${badge.desc}" aria-label="${badge.name} verrouill\xE9. ${badge.desc}">
+          <span class="badge-emoji">\u{1F512}</span>
+          <span class="badge-name">${badge.name}</span>
+        </div>`;
+      });
+      html += "</div>";
+      html += `<div class="profile-member-since">Membre depuis le ${memberSince}</div>`;
+      profileContent.innerHTML = html;
+      initAvatarSelector2(profile.avatar || "\u{1F464}", globalRankMeta.level);
+    }).catch((error) => {
+      console.warn("Profile error:", error.message);
+      profileContent.innerHTML = '<p class="profile-unavailable">Profil indisponible.</p>';
+    });
+  }
+  function initAvatarSelectorRuntime({
+    currentAvatar,
+    globalRankLevel,
+    renderAvatarGrid: renderAvatarGrid2
+  }) {
+    const btnEdit = document.getElementById("btn-edit-avatar");
+    const modal = document.getElementById("avatar-selector-modal");
+    const closeBtn = document.getElementById("avatar-modal-close");
+    const grid = document.getElementById("avatar-grid");
+    const profileStatsGrid = document.querySelector(".profile-stats-grid");
+    if (!btnEdit || !modal || !grid || !closeBtn) {
+      return;
+    }
+    if (profileStatsGrid && profileStatsGrid.parentNode) {
+      profileStatsGrid.parentNode.insertBefore(modal, profileStatsGrid.nextSibling);
+    }
+    btnEdit.addEventListener("click", () => {
+      modal.style.display = "block";
+      renderAvatarGrid2(currentAvatar, globalRankLevel);
+    });
+    closeBtn.addEventListener("click", () => {
+      modal.style.display = "none";
+    });
+  }
+  function renderAvatarGridRuntime({
+    currentAvatar,
+    globalRankLevel,
+    avatarUnlocks,
+    titleNames,
+    currentUser: currentUser2,
+    getGlobalRankLevelForTitleIndex: getGlobalRankLevelForTitleIndex2,
+    apiUrl,
+    saveCurrentUserToStorage: saveCurrentUserToStorage2,
+    updateUserUI: updateUserUI2,
+    showMessage: showMessage2
+  }) {
+    const grid = document.getElementById("avatar-grid");
+    if (!grid) {
+      return;
+    }
+    grid.innerHTML = "";
+    avatarUnlocks.forEach((avatarDef) => {
+      let requiredLevel = 0;
+      let isUnlocked = false;
+      if (typeof avatarDef.check === "function") {
+        isUnlocked = avatarDef.check(currentUser2);
+      } else {
+        requiredLevel = getGlobalRankLevelForTitleIndex2(avatarDef.reqTitleIdx);
+        isUnlocked = globalRankLevel >= requiredLevel;
+      }
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "avatar-item";
+      item.textContent = avatarDef.emoji;
+      if (avatarDef.emoji === currentAvatar) {
+        item.classList.add("selected");
+      }
+      if (typeof avatarDef.check === "function") {
+        if (!isUnlocked) {
+          item.classList.add("locked");
+          item.title = `Titre sp\xE9cifique requis:
+\u{1F512} ${avatarDef.name}
+(${avatarDef.desc})`;
+          item.setAttribute("aria-disabled", "true");
+        } else {
+          item.title = `D\xE9bloqu\xE9:
+\u2705 ${avatarDef.name}
+- ${avatarDef.desc}`;
+        }
+      } else {
+        const requiredTitle = titleNames[avatarDef.reqTitleIdx];
+        if (!isUnlocked) {
+          item.classList.add("locked");
+          item.title = `Titre global requis:
+\u{1F512} ${requiredTitle}
+(\xE0 atteindre dans tous les modes et zones)`;
+          item.setAttribute("aria-disabled", "true");
+        } else {
+          item.title = `D\xE9bloqu\xE9:
+\u2705 ${requiredTitle} (global)`;
+          if (avatarDef.desc) {
+            item.title += ` - ${avatarDef.desc}`;
+          }
+        }
+      }
+      item.setAttribute("data-tooltip", item.title || "");
+      if (isUnlocked) {
+        item.addEventListener("click", () => {
+          fetch(`${apiUrl}/api/profile/avatar`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${currentUser2.token}`
+            },
+            body: JSON.stringify({ avatar: avatarDef.emoji })
+          }).then((response) => {
+            if (!response.ok) {
+              throw new Error("Erreur sauvegarde avatar");
+            }
+            return response.json();
+          }).then(() => {
+            currentUser2.avatar = avatarDef.emoji;
+            saveCurrentUserToStorage2(currentUser2);
+            updateUserUI2();
+            const modal = document.getElementById("avatar-selector-modal");
+            if (modal) {
+              modal.style.display = "none";
+            }
+            showMessage2("Avatar mis \xE0 jour !", "success");
+          }).catch((error) => {
+            console.error(error);
+            showMessage2("Erreur lors de la sauvegarde de l'avatar", "error");
+          });
+        });
+      }
+      grid.appendChild(item);
+    });
+  }
+  function sendScoreToServerRuntime({
+    isDailyMode: isDailyMode2,
+    currentUser: currentUser2,
+    apiUrl,
+    payload,
+    loadAllLeaderboards: loadAllLeaderboards2
+  }) {
+    if (isDailyMode2 || !currentUser2 || !currentUser2.token) {
+      return;
+    }
+    try {
+      fetch(`${apiUrl}/api/scores`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${currentUser2.token}`
+        },
+        body: JSON.stringify({
+          mode: payload.zoneMode,
+          gameType: payload.gameMode,
+          score: payload.score,
+          itemsCorrect: payload.itemsCorrect,
+          itemsTotal: payload.itemsTotal,
+          timeSec: payload.totalTimeSec,
+          quartierName: payload.quartierName
+        })
+      }).then((response) => response.json()).then(() => {
+        loadAllLeaderboards2();
+      }).catch((error) => {
+        console.error("Erreur envoi score :", error);
+      });
+    } catch (error) {
+      console.error("Erreur envoi score (synchrone) :", error);
+    }
+  }
+
   // src/map.js
   function getDistanceMeters(lat1, lon1, lat2, lon2) {
     const earthRadius = 6371e3;
@@ -3456,26 +4017,14 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     "classique" === getGameMode() ? updateWeightedBar(1) : updateSessionProgressBar();
   }
   function renderUserSticker() {
-    const sticker = document.getElementById("user-sticker"), loginHint = document.getElementById("login-hint");
-    if (!sticker) return;
-    if (currentUser && currentUser.username) {
-      const avatarValue = currentUser.avatar || "\u{1F464}", avatarEl = document.createElement("span"), nameEl = document.createElement("span");
-      avatarEl.className = "user-sticker-avatar", avatarEl.textContent = avatarValue, nameEl.className = "user-sticker-name", nameEl.textContent = currentUser.username, sticker.replaceChildren(avatarEl, nameEl), sticker.style.display = "inline-flex", loginHint && (loginHint.style.display = "none");
-      return;
-    }
-    sticker.textContent = "", sticker.style.display = "none", loginHint && (loginHint.style.display = "");
+    renderUserStickerRuntime(currentUser);
   }
   function updateUserUI() {
-    const e = document.getElementById("current-user-label"), t = document.querySelector(".auth-block"), r = document.getElementById("logout-btn"), a = document.getElementById("daily-mode-btn");
-    if (currentUser && currentUser.username) {
-      e && (e.textContent = `Connect\xE9 en tant que ${currentUser.username}`), renderUserSticker(), t && (t.querySelectorAll("input").forEach((e2) => e2.style.display = "none"), t.querySelectorAll("button:not(#logout-btn)").forEach((e2) => e2.style.display = "none")), r && (r.style.display = "inline-block"), a && (a.style.display = "inline-flex");
-      const i = document.getElementById("profile-panel");
-      i && (i.style.display = "block"), loadProfile();
-    } else {
-      e && (e.textContent = "Non connect\xE9."), renderUserSticker(), t && (t.querySelectorAll("input").forEach((e2) => e2.style.display = ""), t.querySelectorAll("button:not(#logout-btn)").forEach((e2) => e2.style.display = "")), r && (r.style.display = "none"), a && (a.style.display = "none");
-      const i = document.getElementById("profile-panel");
-      i && (i.style.display = "none");
-    }
+    updateUserUIRuntime({
+      currentUser,
+      renderUserSticker,
+      loadProfile
+    });
   }
   infoEl && (infoEl.textContent = ""), function() {
     const e = document.getElementById("weighted-score-help-btn"), t = document.getElementById("weighted-score-help");
@@ -3498,384 +4047,51 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       "Escape" === e2.key && a();
     });
   }();
-  var BADGE_DEFINITIONS = [
-    {
-      id: "first_game",
-      emoji: "\u{1F3AE}",
-      name: "Premi\xE8re Partie",
-      desc: "Terminer une session",
-      check: (e) => {
-        var _a;
-        return (parseInt((_a = e.overall) == null ? void 0 : _a.total_games) || 0) >= 1;
-      }
-    },
-    {
-      id: "games_10",
-      emoji: "\u{1F51F}",
-      name: "25 Parties",
-      desc: "Jouer 25 sessions",
-      check: (e) => {
-        var _a;
-        return (parseInt((_a = e.overall) == null ? void 0 : _a.total_games) || 0) >= 25;
-      }
-    },
-    {
-      id: "games_50",
-      emoji: "\u{1F4AF}",
-      name: "Habitu\xE9",
-      desc: "Jouer 100 sessions",
-      check: (e) => {
-        var _a;
-        return (parseInt((_a = e.overall) == null ? void 0 : _a.total_games) || 0) >= 100;
-      }
-    },
-    {
-      id: "games_100",
-      emoji: "\u{1F48E}",
-      name: "V\xE9t\xE9ran",
-      desc: "Jouer 250 sessions",
-      check: (e) => {
-        var _a;
-        return (parseInt((_a = e.overall) == null ? void 0 : _a.total_games) || 0) >= 250;
-      }
-    },
-    {
-      id: "minot",
-      emoji: "\u{1F9D2}",
-      name: "Minot",
-      desc: "Atteindre Minot dans tous les modes et toutes les zones",
-      check: (e) => hasReachedGlobalRank(e, "M")
-    },
-    {
-      id: "habitue",
-      emoji: "\u2693",
-      name: "Habitu\xE9 du Vieux-Port",
-      desc: "Atteindre Habitu\xE9 dans tous les modes et toutes les zones",
-      check: (e) => hasReachedGlobalRank(e, "H")
-    },
-    {
-      id: "vrai",
-      emoji: "\u{1F4AA}",
-      name: "Vrai Marseillais",
-      desc: "Atteindre Vrai Marseillais dans tous les modes et toutes les zones",
-      check: (e) => hasReachedGlobalRank(e, "V")
-    },
-    {
-      id: "maire",
-      emoji: "\u{1F3DB}\uFE0F",
-      name: "Maire de la Ville",
-      desc: "Atteindre Maire dans tous les modes et toutes les zones",
-      check: (e) => hasReachedGlobalRank(e, "MV")
-    },
-    {
-      id: "celebres",
-      emoji: "\u2B50",
-      name: "\xC9toile de la Caneb",
-      desc: "Jouer en Rues C\xE9l\xE8bres",
-      check: (e) => (e.modes || []).some((e2) => "rues-celebres" === e2.mode)
-    },
-    {
-      id: "ville",
-      emoji: "\u{1F3D9}\uFE0F",
-      name: "Explorateur",
-      desc: "Jouer en Ville Enti\xE8re",
-      check: (e) => (e.modes || []).some((e2) => "ville" === e2.mode)
-    },
-    {
-      id: "monuments",
-      emoji: "\u{1F5FF}",
-      name: "Touriste Culturel",
-      desc: "Jouer en mode Monuments",
-      check: (e) => (e.modes || []).some((e2) => "monuments" === e2.mode)
-    },
-    {
-      id: "all_zones",
-      emoji: "\u{1F9ED}",
-      name: "Globe-trotter",
-      desc: "Jouer dans chaque zone",
-      check: (e) => {
-        const t = new Set((e.modes || []).map((e2) => e2.mode));
-        return [
-          "ville",
-          "quartier",
-          "rues-principales",
-          "rues-celebres",
-          "monuments"
-        ].every((e2) => t.has(e2));
-      }
-    },
-    {
-      id: "daily_first",
-      emoji: "\u{1F4C5}",
-      name: "Premier Daily",
-      desc: "R\xE9ussir un Daily Challenge",
-      check: (e) => {
-        var _a;
-        return (parseInt((_a = e.daily) == null ? void 0 : _a.successes) || 0) >= 1;
-      }
-    },
-    {
-      id: "daily_5",
-      emoji: "\u{1F525}",
-      name: "S\xE9rie de 10",
-      desc: "10 Daily Challenges r\xE9ussis d'affil\xE9e",
-      check: (e) => {
-        var _a;
-        return (parseInt((_a = e.daily) == null ? void 0 : _a.max_streak) || 0) >= 10;
-      }
-    },
-    {
-      id: "daily_10",
-      emoji: "\u26A1",
-      name: "S\xE9rie de 20",
-      desc: "20 Daily Challenges r\xE9ussis d'affil\xE9e",
-      check: (e) => {
-        var _a;
-        return (parseInt((_a = e.daily) == null ? void 0 : _a.max_streak) || 0) >= 20;
-      }
-    },
-    {
-      id: "daily_30",
-      emoji: "\u{1F3C6}",
-      name: "Champion du Mois",
-      desc: "50 Daily Challenges r\xE9ussis d'affil\xE9e",
-      check: (e) => {
-        var _a;
-        return (parseInt((_a = e.daily) == null ? void 0 : _a.max_streak) || 0) >= 50;
-      }
-    },
-    {
-      id: "perfect",
-      emoji: "\u{1F3AF}",
-      name: "Sans Faute",
-      desc: "Score de 100 dans une session",
-      check: (e) => {
-        var _a;
-        return (parseFloat((_a = e.overall) == null ? void 0 : _a.best_score) || 0) >= 100;
-      }
-    },
-    {
-      id: "multi_mode",
-      emoji: "\u{1F31F}",
-      name: "Polyvalent",
-      desc: "Jouer dans 3 modes de jeu diff\xE9rents",
-      check: (e) => new Set((e.modes || []).map((e2) => e2.game_type)).size >= 3
-    }
-  ];
-  function computeBadges(e) {
-    return BADGE_DEFINITIONS.map((t) => ({ ...t, unlocked: t.check(e) }));
-  }
   function loadProfile() {
-    if (!currentUser || !currentUser.token) return;
-    const e = document.getElementById("profile-content");
-    e && (e.innerHTML = '<div class="skeleton skeleton-avatar"></div><div class="skeleton skeleton-line skeleton-line--60"></div><div class="skeleton skeleton-block"></div><div class="skeleton skeleton-line skeleton-line--80"></div>', fetch(API_URL + "/api/profile", {
-      headers: { Authorization: "Bearer " + currentUser.token }
-    }).then((e2) => {
-      if (!e2.ok) throw new Error("HTTP " + e2.status);
-      return e2.json();
-    }).then((t) => {
-      var _a, _b, _c, _d, _e, _f, _g, _h;
-      if (currentUser) {
-        const e2 = t.avatar || "\u{1F464}", r2 = t.username || currentUser.username, a2 = currentUser.avatar !== e2 || currentUser.username !== r2;
-        currentUser.avatar = e2, currentUser.username = r2, a2 && saveCurrentUserToStorage(currentUser), renderUserSticker();
-      }
-      const r = parseFloat((_a = t.overall) == null ? void 0 : _a.best_score) || 0, gRank = getGlobalRankMeta(t), a = gRank.title, n = parseInt((_b = t.overall) == null ? void 0 : _b.total_games) || 0, s = parseFloat((_c = t.overall) == null ? void 0 : _c.avg_score) || 0, i = parseInt((_d = t.daily) == null ? void 0 : _d.total_days) || 0, l = parseInt((_e = t.daily) == null ? void 0 : _e.successes) || 0, o = parseFloat((_f = t.daily) == null ? void 0 : _f.avg_attempts) || 0, u = t.memberSince ? new Date(t.memberSince).toLocaleDateString("fr-FR", {
-        day: "numeric",
-        month: "long",
-        year: "numeric"
-      }) : "\u2014";
-      let d = `
-        <div class="profile-header">
-          <div class="profile-avatar">
-            ${t.avatar || "\u{1F464}"}
-            <button type="button" class="edit-avatar-badge" id="btn-edit-avatar" title="Changer d'avatar" aria-label="Changer d'avatar">\u270F\uFE0F</button>
-          </div>
-          <div class="profile-info">
-            <div class="profile-name">${t.username}</div>
-            <div class="profile-title">${a}</div>
-          </div>
-        </div>
-
-        <div class="profile-stats-grid">
-          <div class="profile-stat">
-            <span class="profile-stat-value">${n}</span>
-            <span class="profile-stat-label">Parties</span>
-          </div>
-          <div class="profile-stat">
-            <span class="profile-stat-value">${r.toFixed(1)}</span>
-            <span class="profile-stat-label">Meilleur</span>
-          </div>
-          <div class="profile-stat">
-            <span class="profile-stat-value">${s}</span>
-            <span class="profile-stat-label">Moyenne</span>
-          </div>
-          <div class="profile-stat">
-            <span class="profile-stat-value">${l}/${i}</span>
-            <span class="profile-stat-label">Daily \u2705</span>
-          </div>
-        </div>`;
-      t.modes && t.modes.length > 0 && (d += '<div class="profile-modes-title">D\xE9tail par mode</div>', d += '<div class="profile-modes">', t.modes.forEach((e2) => {
-        const t2 = ZONE_LABELS[e2.mode] || e2.mode, r2 = GAME_LABELS[e2.game_type] || e2.game_type, n2 = parseFloat(e2.high_score) || 0, s2 = "classique" === e2.game_type ? n2.toFixed(1) : String(Math.round(n2)), a2 = getPlayerTitle(
-          n2,
-          e2.mode,
-          e2.game_type,
-          e2.best_items_total || 0,
-          e2.best_items_correct || 0
-        );
-        d += `
-            <div class="profile-mode-row">
-              <div class="profile-mode-name">${t2} \u2014 ${r2}</div>
-              <div class="profile-mode-details">
-                <span>\u{1F3C6} ${s2}</span>
-                <span>\u{1F4CA} \xD8${parseFloat(e2.avg_score).toFixed(1)}</span>
-                <span>\u{1F3AE} ${e2.games_played}</span>
-              </div>
-              <div class="profile-mode-title">${a2}</div>
-            </div>`;
-      }), d += "</div>"), i > 0 && (d += `
-          <div class="profile-daily-summary">
-            <span>\u{1F4C5} Daily : ${o} essais en moyenne</span>
-            ${((_g = t.daily) == null ? void 0 : _g.current_streak) > 0 ? `<br><span class="profile-daily-current-streak">\u{1F525} S\xE9rie actuelle : ${t.daily.current_streak}</span>` : ""}
-            ${((_h = t.daily) == null ? void 0 : _h.max_streak) > 0 ? `<br><span class="profile-daily-best-streak">\u{1F3C6} Meilleure s\xE9rie : ${t.daily.max_streak}</span>` : ""}
-          </div>`);
-      const c = computeBadges(t), m = c.filter((e2) => e2.unlocked), p = c.filter((e2) => !e2.unlocked);
-      d += `<div class="profile-badges-title">Succ\xE8s (${m.length}/${c.length})</div>`, d += '<div class="profile-badges-grid">', m.forEach((e2) => {
-        d += `<div class="profile-badge unlocked" tabindex="0" title="${e2.name}
-\u2705 ${e2.desc}" data-tooltip="${e2.name}
-\u2705 ${e2.desc}" aria-label="${e2.name} d\xE9bloqu\xE9. ${e2.desc}">
-          <span class="badge-emoji">${e2.emoji}</span>
-          <span class="badge-name">${e2.name}</span>
-        </div>`;
-      }), p.forEach((e2) => {
-        d += `<div class="profile-badge locked" tabindex="0" title="${e2.name}
-\u{1F512} ${e2.desc}" data-tooltip="${e2.name}
-\u{1F512} ${e2.desc}" aria-label="${e2.name} verrouill\xE9. ${e2.desc}">
-          <span class="badge-emoji">\u{1F512}</span>
-          <span class="badge-name">${e2.name}</span>
-        </div>`;
-      }), d += "</div>", d += `<div class="profile-member-since">Membre depuis le ${u}</div>`, e.innerHTML = d;
-      initAvatarSelector(t.avatar || "\u{1F464}", gRank.level);
-    }).catch((t) => {
-      console.warn("Profile error:", t.message), e.innerHTML = '<p class="profile-unavailable">Profil indisponible.</p>';
-    }));
+    loadProfileRuntime({
+      currentUser,
+      apiUrl: API_URL,
+      saveCurrentUserToStorage,
+      renderUserSticker,
+      getGlobalRankMeta,
+      getPlayerTitle,
+      zoneLabels: ZONE_LABELS,
+      gameLabels: GAME_LABELS,
+      hasReachedGlobalRank,
+      initAvatarSelector
+    });
   }
   function initAvatarSelector(currentAvatar, globalRankLevel) {
-    const btnEdit = document.getElementById("btn-edit-avatar");
-    const modal = document.getElementById("avatar-selector-modal");
-    const closeBtn = document.getElementById("avatar-modal-close");
-    const grid = document.getElementById("avatar-grid");
-    const profileStatsGrid = document.querySelector(".profile-stats-grid");
-    if (!btnEdit || !modal || !grid) return;
-    if (profileStatsGrid && profileStatsGrid.parentNode) {
-      profileStatsGrid.parentNode.insertBefore(modal, profileStatsGrid.nextSibling);
-    }
-    btnEdit.addEventListener("click", () => {
-      modal.style.display = "block";
-      renderAvatarGrid(currentAvatar, globalRankLevel);
-    });
-    closeBtn.addEventListener("click", () => {
-      modal.style.display = "none";
+    initAvatarSelectorRuntime({
+      currentAvatar,
+      globalRankLevel,
+      renderAvatarGrid: (avatar, rankLevel) => {
+        renderAvatarGrid(avatar, rankLevel);
+      }
     });
   }
   function renderAvatarGrid(currentAvatar, globalRankLevel) {
-    const grid = document.getElementById("avatar-grid");
-    grid.innerHTML = "";
-    AVATAR_UNLOCKS.forEach((avatarDef) => {
-      let requiredLevel = 0;
-      let isUnlocked = false;
-      if (typeof avatarDef.check === "function") {
-        isUnlocked = avatarDef.check(currentUser);
-      } else {
-        requiredLevel = getGlobalRankLevelForTitleIndex(avatarDef.reqTitleIdx);
-        isUnlocked = globalRankLevel >= requiredLevel;
-      }
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "avatar-item";
-      item.textContent = avatarDef.emoji;
-      if (avatarDef.emoji === currentAvatar) {
-        item.classList.add("selected");
-      }
-      if (typeof avatarDef.check === "function") {
-        if (!isUnlocked) {
-          item.classList.add("locked");
-          item.title = `Titre sp\xE9cifique requis:
-\u{1F512} ${avatarDef.name}
-(${avatarDef.desc})`;
-          item.setAttribute("aria-disabled", "true");
-        } else {
-          item.title = `D\xE9bloqu\xE9:
-\u2705 ${avatarDef.name}
-- ${avatarDef.desc}`;
-        }
-      } else {
-        const reqTitle = TITLE_NAMES[avatarDef.reqTitleIdx];
-        if (!isUnlocked) {
-          item.classList.add("locked");
-          item.title = `Titre global requis:
-\u{1F512} ${reqTitle}
-(\xE0 atteindre dans tous les modes et zones)`;
-          item.setAttribute("aria-disabled", "true");
-        } else {
-          item.title = `D\xE9bloqu\xE9:
-\u2705 ${reqTitle} (global)`;
-          if (avatarDef.desc) item.title += ` - ${avatarDef.desc}`;
-        }
-      }
-      item.setAttribute("data-tooltip", item.title || "");
-      if (isUnlocked) {
-        item.addEventListener("click", () => {
-          fetch(API_URL + "/api/profile/avatar", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": "Bearer " + currentUser.token
-            },
-            body: JSON.stringify({ avatar: avatarDef.emoji })
-          }).then((res) => {
-            if (!res.ok) throw new Error("Erreur sauvegarde avatar");
-            return res.json();
-          }).then((data) => {
-            currentUser.avatar = avatarDef.emoji;
-            saveCurrentUserToStorage(currentUser);
-            updateUserUI();
-            document.getElementById("avatar-selector-modal").style.display = "none";
-            showMessage("Avatar mis \xE0 jour !", "success");
-          }).catch((err) => {
-            console.error(err);
-            showMessage("Erreur lors de la sauvegarde de l'avatar", "error");
-          });
-        });
-      }
-      grid.appendChild(item);
+    renderAvatarGridRuntime({
+      currentAvatar,
+      globalRankLevel,
+      avatarUnlocks: AVATAR_UNLOCKS,
+      titleNames: TITLE_NAMES,
+      currentUser,
+      getGlobalRankLevelForTitleIndex,
+      apiUrl: API_URL,
+      saveCurrentUserToStorage,
+      updateUserUI,
+      showMessage
     });
   }
   function sendScoreToServer(e) {
-    if (!isDailyMode && currentUser && currentUser.token)
-      try {
-        fetch(API_URL + "/api/scores", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer " + currentUser.token
-          },
-          body: JSON.stringify({
-            mode: e.zoneMode,
-            gameType: e.gameMode,
-            score: e.score,
-            itemsCorrect: e.itemsCorrect,
-            itemsTotal: e.itemsTotal,
-            timeSec: e.totalTimeSec,
-            quartierName: e.quartierName
-          })
-        }).then((e2) => e2.json()).then(() => {
-          loadAllLeaderboards();
-        }).catch((e2) => {
-          console.error("Erreur envoi score :", e2);
-        });
-      } catch (e2) {
-        console.error("Erreur envoi score (synchrone) :", e2);
-      }
+    sendScoreToServerRuntime({
+      isDailyMode,
+      currentUser,
+      apiUrl: API_URL,
+      payload: e,
+      loadAllLeaderboards
+    });
   }
   async function handleDailyModeClick() {
     if (currentUser && currentUser.token)
