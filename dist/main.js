@@ -1300,30 +1300,33 @@
     normalized = normalized.replace(/\s+/g, " ").toLowerCase();
     return normalized;
   }
-  var FREE_MODE_EXCLUDED_WORDS = /* @__PURE__ */ new Set([
+  var FREE_MODE_EXCLUDED_PREFIXES = /* @__PURE__ */ new Set([
     "residence",
-    "residences",
-    "metro",
-    "parking",
-    "acces",
-    "entree",
-    "depose",
     "lotissement",
     "domaine",
-    "copropriete",
-    "coproprietes",
+    "gare",
+    "station",
+    "metro",
+    "cite",
+    "acces",
+    "campagne",
+    "parc",
+    "sentier",
+    "cour"
+  ]);
+  var FREE_MODE_EXCLUDED_KEYWORDS = [
+    "hameau",
+    "parking",
     "groupe",
-    "groupes",
+    "entree",
+    "depose",
+    "copropriete",
+    "lycee",
     "hlm",
     "hopital",
-    "lycee",
-    "hameau",
-    "station",
-    "gare",
-    "cite",
-    "campagne",
-    "sentier"
-  ]);
+    "centre",
+    "complexe"
+  ];
   function normalizeStreetTextForFilters(streetName) {
     return (streetName || "").toString().trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9' ]+/g, " ").replace(/’/g, "'").replace(/\s+/g, " ");
   }
@@ -1332,11 +1335,14 @@
     if (!normalized) {
       return true;
     }
-    const tokens = normalized.split(/[\s']/).filter(Boolean);
-    if (tokens.length === 0) {
+    const firstToken = normalized.split(/[\s']/).filter(Boolean)[0];
+    if (!firstToken) {
       return true;
     }
-    return tokens.some((token) => FREE_MODE_EXCLUDED_WORDS.has(token));
+    if (FREE_MODE_EXCLUDED_PREFIXES.has(firstToken)) {
+      return true;
+    }
+    return FREE_MODE_EXCLUDED_KEYWORDS.some((keyword) => normalized.includes(keyword));
   }
   function createArrondissementByQuartierMap(arrondissementByQuartier2) {
     const map2 = /* @__PURE__ */ new Map();

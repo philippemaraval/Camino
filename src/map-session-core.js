@@ -19,30 +19,34 @@ export function normalizeQuartierKey(quartierName) {
   return normalized;
 }
 
-const FREE_MODE_EXCLUDED_WORDS = new Set([
+const FREE_MODE_EXCLUDED_PREFIXES = new Set([
   "residence",
-  "residences",
-  "metro",
-  "parking",
-  "acces",
-  "entree",
-  "depose",
   "lotissement",
   "domaine",
-  "copropriete",
-  "coproprietes",
+  "gare",
+  "station",
+  "metro",
+  "cite",
+  "acces",
+  "campagne",
+  "parc",
+  "sentier",
+  "cour",
+]);
+
+const FREE_MODE_EXCLUDED_KEYWORDS = [
+  "hameau",
+  "parking",
   "groupe",
-  "groupes",
+  "entree",
+  "depose",
+  "copropriete",
+  "lycee",
   "hlm",
   "hopital",
-  "lycee",
-  "hameau",
-  "station",
-  "gare",
-  "cite",
-  "campagne",
-  "sentier",
-]);
+  "centre",
+  "complexe",
+];
 
 function normalizeStreetTextForFilters(streetName) {
   return (streetName || "")
@@ -62,12 +66,16 @@ function isExcludedFromVilleAndQuartier(streetName) {
     return true;
   }
 
-  const tokens = normalized.split(/[\s']/).filter(Boolean);
-  if (tokens.length === 0) {
+  const firstToken = normalized.split(/[\s']/).filter(Boolean)[0];
+  if (!firstToken) {
     return true;
   }
 
-  return tokens.some((token) => FREE_MODE_EXCLUDED_WORDS.has(token));
+  if (FREE_MODE_EXCLUDED_PREFIXES.has(firstToken)) {
+    return true;
+  }
+
+  return FREE_MODE_EXCLUDED_KEYWORDS.some((keyword) => normalized.includes(keyword));
 }
 
 export function createArrondissementByQuartierMap(arrondissementByQuartier) {
