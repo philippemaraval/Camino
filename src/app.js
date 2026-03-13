@@ -1815,6 +1815,9 @@ function handleStreetClick(e, t, r) {
             e.targetGeometry &&
             (e.success || e.attempts_count >= 7) &&
             highlightDailyTarget(e.targetGeometry, !!e.success));
+          if (e.success || e.attempts_count >= 7) {
+            loadAllLeaderboards();
+          }
         })
         .catch((e) => {
           console.warn("Daily sync error (non-bloquant):", e);

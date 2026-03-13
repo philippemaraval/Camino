@@ -4049,6 +4049,9 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
         })
       }).then((e2) => e2.json()).then((e2) => {
         dailyTargetData.userStatus = e2, e2.targetGeometry && (e2.success || e2.attempts_count >= 7) && highlightDailyTarget(e2.targetGeometry, !!e2.success);
+        if (e2.success || e2.attempts_count >= 7) {
+          loadAllLeaderboards();
+        }
       }).catch((e2) => {
         console.warn("Daily sync error (non-bloquant):", e2);
       }).finally(() => {
