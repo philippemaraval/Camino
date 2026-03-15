@@ -3344,11 +3344,27 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       "difficulty-pill--hard"
     ), "rues-principales" === r ? (t.textContent = "Facile", t.classList.add("difficulty-pill--easy")) : "quartier" === r || "monuments" === r ? (t.textContent = "Faisable", t.classList.add("difficulty-pill--medium")) : "rues-celebres" === r ? (t.textContent = "Tr\xE8s Facile", t.classList.add("difficulty-pill--easy")) : "ville" === r ? (t.textContent = "Difficile", t.classList.add("difficulty-pill--hard")) : t.textContent = "";
   }
-  function updateTargetPanelTitle() {
-    const e = document.getElementById("target-panel-title") || document.querySelector(".target-panel .panel-title");
+  function setTargetPanelTitleText(e) {
+    const t = document.getElementById("target-panel-title-text");
+    if (t) return void (t.textContent = e);
+    const r = document.getElementById("target-panel-title") || document.querySelector(".target-panel .panel-title");
+    r && (r.textContent = e);
+  }
+  function updateTargetItemCounter() {
+    const e = document.getElementById("target-item-counter");
     if (!e) return;
-    const t = getZoneMode();
-    isLectureMode ? e.textContent = "monuments" === t ? "Monument \xE0 explorer" : "Recherche de rue" : e.textContent = "monuments" === t ? "Monument \xE0 trouver" : "Rue \xE0 trouver";
+    const t = isSessionRunning && !isDailyMode && !isLectureMode && "classique" === getGameMode();
+    if (!t)
+      return e.textContent = "", void e.classList.add("hidden");
+    const r = "monuments" === getZoneMode(), a = r ? sessionMonuments.length : sessionStreets.length;
+    if (!Number.isFinite(a) || a <= 0)
+      return e.textContent = "", void e.classList.add("hidden");
+    const n = r ? currentMonumentIndex : currentIndex, s = Math.min(a, Math.max(1, n + 1));
+    e.textContent = `${s}/${a}`, e.classList.remove("hidden");
+  }
+  function updateTargetPanelTitle() {
+    const e = getZoneMode();
+    isLectureMode ? setTargetPanelTitleText("monuments" === e ? "Monument \xE0 explorer" : "Recherche de rue") : setTargetPanelTitleText("monuments" === e ? "Monument \xE0 trouver" : "Rue \xE0 trouver"), updateTargetItemCounter();
   }
   function getGameMode() {
     const e = document.getElementById("game-mode-select");
@@ -3952,7 +3968,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       }
       currentTarget = null, currentMonumentTarget = sessionMonuments[currentMonumentIndex], streetStartTime = performance.now(), hasAnsweredCurrentItem = false, resetWeightedBar();
       const t2 = currentMonumentTarget.properties.name, r2 = document.getElementById("target-street");
-      return r2 && (r2.textContent = t2 || "\u2014", requestAnimationFrame(fitTargetStreetText)), void triggerTargetPulse();
+      return r2 && (r2.textContent = t2 || "\u2014", requestAnimationFrame(fitTargetStreetText)), updateTargetItemCounter(), void triggerTargetPulse();
     }
     if (currentIndex >= sessionStreets.length) {
       if ("chrono" !== e) return void endSession();
@@ -3960,7 +3976,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     }
     currentMonumentTarget = null, currentTarget = sessionStreets[currentIndex], streetStartTime = performance.now(), hasAnsweredCurrentItem = false, resetWeightedBar();
     const t = currentTarget.properties.name, r = document.getElementById("target-street");
-    r && (r.textContent = t || "\u2014", requestAnimationFrame(fitTargetStreetText)), triggerTargetPulse();
+    r && (r.textContent = t || "\u2014", requestAnimationFrame(fitTargetStreetText)), updateTargetItemCounter(), triggerTargetPulse();
   }
   function triggerTargetPulse() {
     const e = document.querySelector(".target-panel");
@@ -4066,12 +4082,11 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
           `\u{1F389} BRAVO ! Trouv\xE9 en ${u} essai${u > 1 ? "s" : ""} !`,
           "success"
         ), triggerHaptic("success"), renderDailyGuessHistory({ success: true, attempts: u });
-        const e2 = document.getElementById("target-panel-title");
-        e2 && (e2.textContent = "\u{1F389} D\xE9fi r\xE9ussi !");
+        setTargetPanelTitleText("\u{1F389} D\xE9fi r\xE9ussi !"), updateTargetItemCounter();
         const t2 = document.getElementById("restart-btn");
         t2 && (t2.textContent = "Commencer la session", t2.classList.remove("btn-stop"), t2.classList.add("btn-primary"));
         const r2 = normalizeName(dailyTargetData.streetName), a3 = allStreetFeatures.find(
-          (e3) => e3.properties && normalizeName(e3.properties.name) === r2
+          (e2) => e2.properties && normalizeName(e2.properties.name) === r2
         );
         a3 && a3.geometry && highlightDailyTarget(a3.geometry, true);
       } else if (d <= 0) {
@@ -4079,12 +4094,11 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
           `\u274C Dommage ! C'\xE9tait \xAB ${dailyTargetData.streetName} \xBB. Fin du d\xE9fi.`,
           "error"
         ), triggerHaptic("error"), renderDailyGuessHistory({ success: false });
-        const e2 = document.getElementById("target-panel-title");
-        e2 && (e2.textContent = "\u274C D\xE9fi \xE9chou\xE9");
+        setTargetPanelTitleText("\u274C D\xE9fi \xE9chou\xE9"), updateTargetItemCounter();
         const t2 = document.getElementById("restart-btn");
         t2 && (t2.textContent = "Commencer la session", t2.classList.remove("btn-stop"), t2.classList.add("btn-primary"));
         const r2 = normalizeName(dailyTargetData.streetName), a3 = allStreetFeatures.find(
-          (e3) => e3.properties && normalizeName(e3.properties.name) === r2
+          (e2) => e2.properties && normalizeName(e2.properties.name) === r2
         );
         a3 && a3.geometry && highlightDailyTarget(a3.geometry, false);
       } else
@@ -4586,8 +4600,8 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     s && (s.value = "ville", i && (i.innerHTML = '<span class="custom-select-label">Ville enti\xE8re</span><span class="difficulty-pill difficulty-pill--hard">Difficile</span>'));
     const l = document.getElementById("target-street");
     l && (l.textContent = e.streetName, requestAnimationFrame(fitTargetStreetText));
-    const o = Math.max(0, 7 - (t.attempts_count || 0)), u = document.getElementById("target-panel-title");
-    u && (u.textContent = r ? t.success ? "\u{1F389} D\xE9fi r\xE9ussi !" : "\u274C D\xE9fi \xE9chou\xE9" : `\u{1F3AF} D\xE9fi quotidien \u2014 ${o} essai${o > 1 ? "s" : ""} restant${o > 1 ? "s" : ""}`), isSessionRunning = true, refreshLectureStreetSearchForCurrentMode(), updateLayoutSessionState();
+    const o = Math.max(0, 7 - (t.attempts_count || 0)), u = r ? t.success ? "\u{1F389} D\xE9fi r\xE9ussi !" : "\u274C D\xE9fi \xE9chou\xE9" : `\u{1F3AF} D\xE9fi quotidien \u2014 ${o} essai${o > 1 ? "s" : ""} restant${o > 1 ? "s" : ""}`;
+    setTargetPanelTitleText(u), updateTargetItemCounter(), isSessionRunning = true, refreshLectureStreetSearchForCurrentMode(), updateLayoutSessionState();
     const d = document.getElementById("skip-btn"), c = document.getElementById("pause-btn");
     d && (d.style.display = "none"), c && (c.style.display = "none");
     const m = document.getElementById("restart-btn");

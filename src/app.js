@@ -477,15 +477,44 @@ function updateModeDifficultyPill() {
               t.classList.add("difficulty-pill--hard"))
             : (t.textContent = ""));
 }
-function updateTargetPanelTitle() {
-  const e =
+function setTargetPanelTitleText(e) {
+  const t = document.getElementById("target-panel-title-text");
+  if (t) return void (t.textContent = e);
+  const r =
     document.getElementById("target-panel-title") ||
     document.querySelector(".target-panel .panel-title");
+  r && (r.textContent = e);
+}
+function updateTargetItemCounter() {
+  const e = document.getElementById("target-item-counter");
   if (!e) return;
-  const t = getZoneMode();
-  isLectureMode
-    ? (e.textContent = "monuments" === t ? "Monument à explorer" : "Recherche de rue")
-    : (e.textContent = "monuments" === t ? "Monument à trouver" : "Rue à trouver");
+  const t =
+    isSessionRunning &&
+    !isDailyMode &&
+    !isLectureMode &&
+    "classique" === getGameMode();
+  if (!t)
+    return (
+      (e.textContent = ""),
+      void e.classList.add("hidden")
+    );
+  const r = "monuments" === getZoneMode(),
+    a = r ? sessionMonuments.length : sessionStreets.length;
+  if (!Number.isFinite(a) || a <= 0)
+    return (
+      (e.textContent = ""),
+      void e.classList.add("hidden")
+    );
+  const n = r ? currentMonumentIndex : currentIndex,
+    s = Math.min(a, Math.max(1, n + 1));
+  ((e.textContent = `${s}/${a}`), e.classList.remove("hidden"));
+}
+function updateTargetPanelTitle() {
+  const e = getZoneMode();
+  (isLectureMode
+    ? setTargetPanelTitleText("monuments" === e ? "Monument à explorer" : "Recherche de rue")
+    : setTargetPanelTitleText("monuments" === e ? "Monument à trouver" : "Rue à trouver"),
+    updateTargetItemCounter());
 }
 function getGameMode() {
   const e = document.getElementById("game-mode-select");
@@ -1559,6 +1588,7 @@ function setNewTarget() {
       r &&
       ((r.textContent = t || "—"),
         requestAnimationFrame(fitTargetStreetText)),
+      updateTargetItemCounter(),
       void triggerTargetPulse()
     );
   }
@@ -1575,6 +1605,7 @@ function setNewTarget() {
     r = document.getElementById("target-street");
   (r &&
     ((r.textContent = t || "—"), requestAnimationFrame(fitTargetStreetText)),
+    updateTargetItemCounter(),
     triggerTargetPulse());
 }
 function triggerTargetPulse() {
@@ -1752,8 +1783,7 @@ function handleStreetClick(e, t, r) {
         ),
         triggerHaptic('success'),
         renderDailyGuessHistory({ success: !0, attempts: u }));
-      const e = document.getElementById("target-panel-title");
-      e && (e.textContent = "🎉 Défi réussi !");
+      (setTargetPanelTitleText("🎉 Défi réussi !"), updateTargetItemCounter());
       const t = document.getElementById("restart-btn");
       t &&
         ((t.textContent = "Commencer la session"),
@@ -1774,8 +1804,7 @@ function handleStreetClick(e, t, r) {
         ),
         triggerHaptic('error'),
         renderDailyGuessHistory({ success: !1 }));
-      const e = document.getElementById("target-panel-title");
-      e && (e.textContent = "❌ Défi échoué");
+      (setTargetPanelTitleText("❌ Défi échoué"), updateTargetItemCounter());
       const t = document.getElementById("restart-btn");
       t &&
         ((t.textContent = "Commencer la session"),
@@ -2598,13 +2627,13 @@ function startDailySession(e) {
     ((l.textContent = e.streetName),
       requestAnimationFrame(fitTargetStreetText));
   const o = Math.max(0, 7 - (t.attempts_count || 0)),
-    u = document.getElementById("target-panel-title");
-  (u &&
-    (u.textContent = r
+    u = r
       ? t.success
         ? "🎉 Défi réussi !"
         : "❌ Défi échoué"
-      : `🎯 Défi quotidien — ${o} essai${o > 1 ? "s" : ""} restant${o > 1 ? "s" : ""}`),
+      : `🎯 Défi quotidien — ${o} essai${o > 1 ? "s" : ""} restant${o > 1 ? "s" : ""}`;
+  (setTargetPanelTitleText(u),
+    updateTargetItemCounter(),
     (isSessionRunning = !0),
     refreshLectureStreetSearchForCurrentMode(),
     updateLayoutSessionState());

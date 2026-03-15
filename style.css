@@ -803,6 +803,30 @@ button {
   margin-top: 4px;
 }
 
+.target-panel-title-text {
+  min-width: 0;
+}
+
+.target-item-counter {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(18, 41, 122, 0.2);
+  background: rgba(18, 41, 122, 0.08);
+  color: var(--primary-dark);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
 .lecture-search {
   margin-top: 4px;
   position: relative;
@@ -1427,6 +1451,12 @@ button {
   body.session-running .target-panel .panel-title {
     font-size: 10px;
     margin-bottom: 2px;
+  }
+
+  body.session-running .target-item-counter {
+    min-width: 40px;
+    padding: 1px 6px;
+    font-size: 9px;
   }
 
   body.session-running .target-name {
