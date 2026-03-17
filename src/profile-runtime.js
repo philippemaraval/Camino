@@ -464,6 +464,7 @@ export function loadProfileRuntime({
   gameLabels,
   hasReachedGlobalRank,
   initAvatarSelector,
+  onProfileRendered,
 }) {
   if (!currentUser || !currentUser.token) {
     return;
@@ -591,6 +592,16 @@ export function loadProfileRuntime({
           </div>`;
       }
 
+      html += `
+        <section class="profile-notification-card">
+          <div class="profile-notification-title">Rappel Daily à 10:00</div>
+          <p id="daily-reminder-status" class="profile-notification-status">Chargement…</p>
+          <div class="profile-notification-actions">
+            <button type="button" id="daily-reminder-enable-btn" class="btn-secondary">Activer le rappel</button>
+            <button type="button" id="daily-reminder-disable-btn" class="btn-tertiary hidden">Désactiver</button>
+          </div>
+        </section>`;
+
       const badges = computeBadgesRuntime(profile, hasReachedGlobalRank);
       const unlocked = badges.filter((badge) => badge.unlocked);
       const locked = badges.filter((badge) => !badge.unlocked);
@@ -619,6 +630,9 @@ export function loadProfileRuntime({
       profileContent.innerHTML = html;
       initAvatarSelector(profile.avatar || "👤", globalRankMeta.level);
       bindSingleOpenAccordion(profileContent);
+      if (typeof onProfileRendered === "function") {
+        onProfileRendered();
+      }
     })
     .catch((error) => {
       console.warn("Profile error:", error.message);

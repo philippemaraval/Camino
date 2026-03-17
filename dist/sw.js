@@ -1,4 +1,4 @@
-const CACHE_NAME = "camino-v3";
+const CACHE_NAME = "camino-v4";
 
 const PRECACHE_URLS = [
   "/",
@@ -103,4 +103,52 @@ self.addEventListener("fetch", (event) => {
   if (isCdnAsset) {
     event.respondWith(cacheFirst(request));
   }
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch (error) {
+    payload = {
+      body: event.data ? event.data.text() : "",
+    };
+  }
+
+  const title = payload.title || "Camino";
+  const body = payload.body || "Le Daily du jour est disponible.";
+  const targetUrl = payload.url || "/";
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: "/android-chrome-192x192.png",
+      badge: "/favicon-32x32.png",
+      tag: payload.tag || "camino-notification",
+      renotify: true,
+      data: { url: targetUrl },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = event.notification?.data?.url || "/";
+
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
+      for (const client of windowClients) {
+        if (!client || !("focus" in client)) continue;
+        const sameOrigin = client.url && client.url.startsWith(self.location.origin);
+        if (sameOrigin) {
+          client.navigate(targetUrl);
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl);
+      }
+      return undefined;
+    }),
+  );
 });

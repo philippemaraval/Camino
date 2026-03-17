@@ -3,7 +3,16 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const path = require('path');
+const webPush = require('web-push');
 const db = require('./database');
+
+function readEnvIntegerInRange(name, fallback, min, max) {
+    const raw = Number.parseInt(process.env[name], 10);
+    if (!Number.isInteger(raw) || raw < min || raw > max) {
+        return fallback;
+    }
+    return raw;
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -11,6 +20,13 @@ const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const JWT_SECRET_KEY = process.env.SECRET_KEY || '';
 const ENABLE_ADMIN_ROUTES = process.env.ENABLE_ADMIN_ROUTES === 'true';
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || '';
+const PUSH_REMINDER_HOUR = readEnvIntegerInRange('PUSH_REMINDER_HOUR', 10, 0, 23);
+const PUSH_REMINDER_MINUTE = readEnvIntegerInRange('PUSH_REMINDER_MINUTE', 0, 0, 59);
+const PUSH_REMINDER_TIMEZONE = process.env.PUSH_REMINDER_TIMEZONE || 'Europe/Paris';
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || '';
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
+const PUSH_ENABLED = Boolean(VAPID_SUBJECT && VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 
 if (!JWT_SECRET_KEY) {
     if (IS_PRODUCTION) {
@@ -20,6 +36,12 @@ if (!JWT_SECRET_KEY) {
 }
 
 const EFFECTIVE_JWT_SECRET = JWT_SECRET_KEY || crypto.randomBytes(32).toString('hex');
+
+if (PUSH_ENABLED) {
+    webPush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+} else {
+    console.warn('Push notifications disabled: missing VAPID_SUBJECT / VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY.');
+}
 
 // CORS configuration
 const allowedOrigins = new Set([
@@ -80,6 +102,7 @@ app.use(express.static(path.join(__dirname, '..')));
 // Initialize database then start server
 db.initDb().then(() => {
     console.log('Database ready.');
+    startPushReminderScheduler();
 }).catch(err => {
     console.error('Database init failed:', err);
     process.exit(1);
@@ -132,6 +155,53 @@ function requireAdminApiKey(req, res, next) {
     next();
 }
 
+function getTimePartsInZone(date, timeZone) {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    });
+
+    const parts = formatter.formatToParts(date);
+    const byType = {};
+    parts.forEach((part) => {
+        byType[part.type] = part.value;
+    });
+
+    return {
+        dateStr: `${byType.year}-${byType.month}-${byType.day}`,
+        hour: Number.parseInt(byType.hour, 10),
+        minute: Number.parseInt(byType.minute, 10),
+    };
+}
+
+function isValidPushSubscription(subscription) {
+    if (!subscription || typeof subscription !== 'object') {
+        return false;
+    }
+    const endpoint = String(subscription.endpoint || '').trim();
+    const keys = subscription.keys || {};
+    return Boolean(
+        endpoint &&
+        typeof keys === 'object' &&
+        String(keys.p256dh || '').trim() &&
+        String(keys.auth || '').trim()
+    );
+}
+
+function getDailyReminderPayload() {
+    return JSON.stringify({
+        title: 'Camino Daily',
+        body: 'Le Daily est dispo. Lance ta partie du jour !',
+        url: '/',
+        tag: 'camino-daily-reminder',
+    });
+}
+
 // ----------------------
 // Auth Routes
 // ----------------------
@@ -159,6 +229,94 @@ app.post('/api/login', async (req, res) => {
 
     const token = jwt.sign({ id: user.id, username: user.username }, EFFECTIVE_JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, username: user.username, avatar: user.avatar || '👤' });
+});
+
+// ----------------------
+// Push Notification Routes
+// ----------------------
+
+app.get('/api/notifications/public-key', (req, res) => {
+    res.json({
+        enabled: PUSH_ENABLED,
+        publicKey: PUSH_ENABLED ? VAPID_PUBLIC_KEY : null,
+        reminder: {
+            hour: PUSH_REMINDER_HOUR,
+            minute: PUSH_REMINDER_MINUTE,
+            timezone: PUSH_REMINDER_TIMEZONE,
+        },
+    });
+});
+
+app.get('/api/notifications/status', authenticateToken, async (req, res) => {
+    try {
+        if (!PUSH_ENABLED) {
+            return res.json({
+                enabled: false,
+                subscribed: false,
+                reminder: {
+                    hour: PUSH_REMINDER_HOUR,
+                    minute: PUSH_REMINDER_MINUTE,
+                    timezone: PUSH_REMINDER_TIMEZONE,
+                },
+            });
+        }
+
+        const subscription = await db.getPushSubscriptionStatusForUser(req.user.id);
+        return res.json({
+            enabled: true,
+            subscribed: Boolean(subscription),
+            endpoint: subscription?.endpoint || null,
+            reminder: {
+                hour: PUSH_REMINDER_HOUR,
+                minute: PUSH_REMINDER_MINUTE,
+                timezone: PUSH_REMINDER_TIMEZONE,
+            },
+        });
+    } catch (err) {
+        console.error('Push status error:', err);
+        return res.status(500).json({ error: 'Failed to load notification status' });
+    }
+});
+
+app.post('/api/notifications/subscribe', authenticateToken, async (req, res) => {
+    if (!PUSH_ENABLED) {
+        return res.status(503).json({ error: 'Push notifications are not configured on server' });
+    }
+
+    const { subscription } = req.body || {};
+    if (!isValidPushSubscription(subscription)) {
+        return res.status(400).json({ error: 'Invalid push subscription payload' });
+    }
+
+    try {
+        await db.upsertPushSubscription(req.user.id, subscription);
+        return res.json({
+            success: true,
+            reminder: {
+                hour: PUSH_REMINDER_HOUR,
+                minute: PUSH_REMINDER_MINUTE,
+                timezone: PUSH_REMINDER_TIMEZONE,
+            },
+        });
+    } catch (err) {
+        console.error('Push subscribe error:', err);
+        return res.status(500).json({ error: 'Failed to save push subscription' });
+    }
+});
+
+app.post('/api/notifications/unsubscribe', authenticateToken, async (req, res) => {
+    const endpoint = String(req.body?.endpoint || '').trim();
+    try {
+        if (endpoint) {
+            await db.removePushSubscriptionForUser(req.user.id, endpoint);
+        } else {
+            await db.removeAllPushSubscriptionsForUser(req.user.id);
+        }
+        return res.json({ success: true });
+    } catch (err) {
+        console.error('Push unsubscribe error:', err);
+        return res.status(500).json({ error: 'Failed to remove push subscription' });
+    }
 });
 
 // ----------------------
@@ -477,6 +635,92 @@ app.get('/api/daily/leaderboard', async (req, res) => {
         res.status(500).json({ error: 'Failed to load daily leaderboard' });
     }
 });
+
+async function sendDailyReminderPushesForDate(dateStr) {
+    if (!PUSH_ENABLED) {
+        return { sent: 0, removed: 0, failed: 0 };
+    }
+
+    const payload = getDailyReminderPayload();
+    const subscriptions = await db.listPushSubscriptionsDueForDate(dateStr);
+
+    let sent = 0;
+    let removed = 0;
+    let failed = 0;
+
+    for (const row of subscriptions) {
+        const endpoint = row.endpoint;
+        const subscription = row.subscription_json;
+
+        try {
+            await webPush.sendNotification(subscription, payload, { TTL: 60 * 60 });
+            await db.markPushSubscriptionNotified(endpoint, dateStr);
+            sent += 1;
+        } catch (err) {
+            const statusCode = Number(err?.statusCode || 0);
+            if (statusCode === 404 || statusCode === 410) {
+                await db.removePushSubscriptionByEndpoint(endpoint);
+                removed += 1;
+            } else {
+                failed += 1;
+                console.warn('Push send failure:', {
+                    endpoint,
+                    statusCode,
+                    message: err?.message || 'Unknown push error',
+                });
+            }
+        }
+    }
+
+    return { sent, removed, failed };
+}
+
+let lastReminderMinuteKey = '';
+
+async function runPushReminderSchedulerTick() {
+    if (!PUSH_ENABLED) {
+        return;
+    }
+
+    const nowParts = getTimePartsInZone(new Date(), PUSH_REMINDER_TIMEZONE);
+    const isReminderTime =
+        nowParts.hour === PUSH_REMINDER_HOUR &&
+        nowParts.minute === PUSH_REMINDER_MINUTE;
+
+    if (!isReminderTime) {
+        return;
+    }
+
+    const minuteKey = `${nowParts.dateStr}T${String(nowParts.hour).padStart(2, '0')}:${String(nowParts.minute).padStart(2, '0')}`;
+    if (minuteKey === lastReminderMinuteKey) {
+        return;
+    }
+    lastReminderMinuteKey = minuteKey;
+
+    try {
+        const result = await sendDailyReminderPushesForDate(nowParts.dateStr);
+        console.log(
+            `[Push Daily ${nowParts.dateStr}] sent=${result.sent} removed=${result.removed} failed=${result.failed}`
+        );
+    } catch (err) {
+        console.error('Daily push scheduler error:', err);
+    }
+}
+
+function startPushReminderScheduler() {
+    if (!PUSH_ENABLED) {
+        return;
+    }
+    runPushReminderSchedulerTick().catch((err) => {
+        console.error('Initial push scheduler tick failed:', err);
+    });
+    setInterval(() => {
+        runPushReminderSchedulerTick().catch((err) => {
+            console.error('Push scheduler tick failed:', err);
+        });
+    }, 30 * 1000);
+    console.log(`Push reminder scheduler enabled at ${String(PUSH_REMINDER_HOUR).padStart(2, '0')}:${String(PUSH_REMINDER_MINUTE).padStart(2, '0')} (${PUSH_REMINDER_TIMEZONE}).`);
+}
 
 // ----------------------
 // Admin Routes (Temporary for DB cleanup)

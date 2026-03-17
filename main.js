@@ -872,7 +872,8 @@
     zoneLabels,
     gameLabels,
     hasReachedGlobalRank: hasReachedGlobalRank2,
-    initAvatarSelector: initAvatarSelector2
+    initAvatarSelector: initAvatarSelector2,
+    onProfileRendered
   }) {
     if (!currentUser2 || !currentUser2.token) {
       return;
@@ -983,6 +984,15 @@
             ${((_h = profile.daily) == null ? void 0 : _h.max_streak) > 0 ? `<br><span class="profile-daily-best-streak">\u{1F3C6} Meilleure s\xE9rie : ${profile.daily.max_streak}</span>` : ""}
           </div>`;
       }
+      html += `
+        <section class="profile-notification-card">
+          <div class="profile-notification-title">Rappel Daily \xE0 10:00</div>
+          <p id="daily-reminder-status" class="profile-notification-status">Chargement\u2026</p>
+          <div class="profile-notification-actions">
+            <button type="button" id="daily-reminder-enable-btn" class="btn-secondary">Activer le rappel</button>
+            <button type="button" id="daily-reminder-disable-btn" class="btn-tertiary hidden">D\xE9sactiver</button>
+          </div>
+        </section>`;
       const badges = computeBadgesRuntime(profile, hasReachedGlobalRank2);
       const unlocked = badges.filter((badge) => badge.unlocked);
       const locked = badges.filter((badge) => !badge.unlocked);
@@ -1010,6 +1020,9 @@
       profileContent.innerHTML = html;
       initAvatarSelector2(profile.avatar || "\u{1F464}", globalRankMeta.level);
       bindSingleOpenAccordion(profileContent);
+      if (typeof onProfileRendered === "function") {
+        onProfileRendered();
+      }
     }).catch((error) => {
       console.warn("Profile error:", error.message);
       profileContent.innerHTML = '<p class="profile-unavailable">Profil indisponible.</p>';
@@ -3319,6 +3332,13 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   // src/app.js
   var FAMOUS_STREET_INFOS = {};
   var MAIN_STREET_INFOS = {};
+  var DEFAULT_REMINDER_CONFIG = {
+    hour: 10,
+    minute: 0,
+    timezone: "Europe/Paris"
+  };
+  var swRegistrationPromise = null;
+  var notificationConfigCache = null;
   async function loadStreetInfos() {
     try {
       const response = await fetch("data/street_infos.json?v=" + Date.now());
@@ -3335,6 +3355,259 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   }
   function normalizeSearchText(e) {
     return normalizeName(e).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
+  function toPushServerKeyUint8Array(base64String) {
+    const normalized = String(base64String || "").trim();
+    const padding = "=".repeat((4 - normalized.length % 4) % 4);
+    const base64 = (normalized + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = window.atob(base64);
+    const output = new Uint8Array(decoded.length);
+    for (let i = 0; i < decoded.length; i += 1) {
+      output[i] = decoded.charCodeAt(i);
+    }
+    return output;
+  }
+  function isPushReminderSupported() {
+    return window.isSecureContext && "Notification" in window && "serviceWorker" in navigator && "PushManager" in window;
+  }
+  function formatReminderTimeLabel(reminder = DEFAULT_REMINDER_CONFIG) {
+    const hour = Number.isInteger(reminder == null ? void 0 : reminder.hour) ? reminder.hour : DEFAULT_REMINDER_CONFIG.hour;
+    const minute = Number.isInteger(reminder == null ? void 0 : reminder.minute) ? reminder.minute : DEFAULT_REMINDER_CONFIG.minute;
+    const timezone = (reminder == null ? void 0 : reminder.timezone) || DEFAULT_REMINDER_CONFIG.timezone;
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} (${timezone})`;
+  }
+  function getDailyReminderElements() {
+    return {
+      statusEl: document.getElementById("daily-reminder-status"),
+      enableBtn: document.getElementById("daily-reminder-enable-btn"),
+      disableBtn: document.getElementById("daily-reminder-disable-btn")
+    };
+  }
+  function setDailyReminderStatus(message, type = "neutral") {
+    const { statusEl } = getDailyReminderElements();
+    if (!statusEl) {
+      return;
+    }
+    statusEl.textContent = message;
+    statusEl.classList.remove("is-error", "is-success");
+    if (type === "error") {
+      statusEl.classList.add("is-error");
+    } else if (type === "success") {
+      statusEl.classList.add("is-success");
+    }
+  }
+  function setDailyReminderButtons({
+    canEnable = false,
+    canDisable = false,
+    loading = false
+  } = {}) {
+    const { enableBtn, disableBtn } = getDailyReminderElements();
+    if (!enableBtn || !disableBtn) {
+      return;
+    }
+    enableBtn.classList.toggle("hidden", !canEnable);
+    disableBtn.classList.toggle("hidden", !canDisable);
+    enableBtn.disabled = loading;
+    disableBtn.disabled = loading;
+  }
+  async function ensureServiceWorkerRegistration() {
+    if (!("serviceWorker" in navigator)) {
+      return null;
+    }
+    if (!swRegistrationPromise) {
+      swRegistrationPromise = navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then((registration) => {
+        console.log("SW registered:", registration.scope);
+        registration.update().catch(() => {
+        });
+        return registration;
+      }).catch((error) => {
+        swRegistrationPromise = null;
+        console.warn("SW registration failed:", error);
+        return null;
+      });
+    }
+    return swRegistrationPromise;
+  }
+  async function getNotificationConfig(forceReload = false) {
+    if (!forceReload && notificationConfigCache) {
+      return notificationConfigCache;
+    }
+    const response = await fetch(`${API_URL}/api/notifications/public-key`);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    notificationConfigCache = payload;
+    return payload;
+  }
+  async function fetchNotificationStatus() {
+    if (!(currentUser && currentUser.token)) {
+      return null;
+    }
+    const response = await fetch(`${API_URL}/api/notifications/status`, {
+      headers: {
+        Authorization: `Bearer ${currentUser.token}`
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return response.json();
+  }
+  async function refreshDailyReminderControls() {
+    const { statusEl, enableBtn, disableBtn } = getDailyReminderElements();
+    if (!statusEl || !enableBtn || !disableBtn) {
+      return;
+    }
+    setDailyReminderStatus("Chargement\u2026");
+    setDailyReminderButtons({ loading: true });
+    if (!(currentUser && currentUser.token)) {
+      setDailyReminderStatus("Connectez-vous pour g\xE9rer le rappel Daily.", "error");
+      setDailyReminderButtons({ canEnable: false, canDisable: false, loading: false });
+      return;
+    }
+    if (!isPushReminderSupported()) {
+      setDailyReminderStatus("Notifications push non disponibles sur ce navigateur.", "error");
+      setDailyReminderButtons({ canEnable: false, canDisable: false, loading: false });
+      return;
+    }
+    let config;
+    try {
+      config = await getNotificationConfig();
+    } catch (error) {
+      setDailyReminderStatus("Impossible de charger la config des notifications.", "error");
+      setDailyReminderButtons({ canEnable: false, canDisable: false, loading: false });
+      return;
+    }
+    if (!(config == null ? void 0 : config.enabled) || !(config == null ? void 0 : config.publicKey)) {
+      setDailyReminderStatus("Rappels indisponibles: configuration serveur manquante.", "error");
+      setDailyReminderButtons({ canEnable: false, canDisable: false, loading: false });
+      return;
+    }
+    const scheduleLabel = formatReminderTimeLabel(config.reminder || DEFAULT_REMINDER_CONFIG);
+    let registration;
+    try {
+      registration = await ensureServiceWorkerRegistration();
+    } catch (error) {
+      registration = null;
+    }
+    if (!registration) {
+      setDailyReminderStatus("Service worker indisponible. Rechargez la page.", "error");
+      setDailyReminderButtons({ canEnable: false, canDisable: false, loading: false });
+      return;
+    }
+    try {
+      const [serverStatus, browserSubscription] = await Promise.all([
+        fetchNotificationStatus(),
+        registration.pushManager.getSubscription()
+      ]);
+      const isSubscribed = Boolean((serverStatus == null ? void 0 : serverStatus.subscribed) && browserSubscription);
+      if (isSubscribed) {
+        setDailyReminderStatus(`Rappel actif tous les jours \xE0 ${scheduleLabel}.`, "success");
+        setDailyReminderButtons({ canEnable: false, canDisable: true, loading: false });
+      } else {
+        setDailyReminderStatus(`Rappel inactif. Active-le pour ${scheduleLabel}.`);
+        setDailyReminderButtons({ canEnable: true, canDisable: false, loading: false });
+      }
+    } catch (error) {
+      setDailyReminderStatus("Impossible de lire le statut du rappel.", "error");
+      setDailyReminderButtons({ canEnable: true, canDisable: false, loading: false });
+    }
+  }
+  async function enableDailyReminder() {
+    if (!(currentUser && currentUser.token)) {
+      showMessage("Connectez-vous pour activer le rappel Daily.", "warning");
+      return;
+    }
+    setDailyReminderButtons({ loading: true });
+    try {
+      const config = await getNotificationConfig();
+      if (!(config == null ? void 0 : config.enabled) || !(config == null ? void 0 : config.publicKey)) {
+        throw new Error("Push disabled on server");
+      }
+      const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+      if (permission !== "granted") {
+        setDailyReminderStatus("Autorisation de notification refus\xE9e.", "error");
+        setDailyReminderButtons({ canEnable: true, canDisable: false, loading: false });
+        return;
+      }
+      const registration = await ensureServiceWorkerRegistration();
+      if (!registration) {
+        throw new Error("Missing service worker registration");
+      }
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: toPushServerKeyUint8Array(config.publicKey)
+        });
+      }
+      const response = await fetch(`${API_URL}/api/notifications/subscribe`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${currentUser.token}`
+        },
+        body: JSON.stringify({ subscription })
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const scheduleLabel = formatReminderTimeLabel(config.reminder || DEFAULT_REMINDER_CONFIG);
+      showMessage(`Rappel Daily activ\xE9 pour ${scheduleLabel}.`, "success");
+    } catch (error) {
+      console.warn("Enable daily reminder failed:", error);
+      showMessage("Impossible d'activer le rappel Daily.", "error");
+    }
+    await refreshDailyReminderControls();
+  }
+  async function disableDailyReminder() {
+    if (!(currentUser && currentUser.token)) {
+      return;
+    }
+    setDailyReminderButtons({ loading: true });
+    try {
+      const registration = await ensureServiceWorkerRegistration();
+      const subscription = registration ? await registration.pushManager.getSubscription() : null;
+      await fetch(`${API_URL}/api/notifications/unsubscribe`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${currentUser.token}`
+        },
+        body: JSON.stringify({
+          endpoint: (subscription == null ? void 0 : subscription.endpoint) || ""
+        })
+      });
+      if (subscription) {
+        await subscription.unsubscribe().catch(() => {
+        });
+      }
+      showMessage("Rappel Daily d\xE9sactiv\xE9.", "info");
+    } catch (error) {
+      console.warn("Disable daily reminder failed:", error);
+      showMessage("Impossible de d\xE9sactiver le rappel Daily.", "error");
+    }
+    await refreshDailyReminderControls();
+  }
+  function initDailyReminderControls() {
+    const { enableBtn, disableBtn } = getDailyReminderElements();
+    if (!enableBtn || !disableBtn) {
+      return;
+    }
+    enableBtn.onclick = () => {
+      enableDailyReminder().catch((error) => {
+        console.warn("Enable reminder handler failed:", error);
+      });
+    };
+    disableBtn.onclick = () => {
+      disableDailyReminder().catch((error) => {
+        console.warn("Disable reminder handler failed:", error);
+      });
+    };
+    refreshDailyReminderControls().catch((error) => {
+      console.warn("Refresh reminder controls failed:", error);
+    });
   }
   var tooltipPopupEl = null;
   var tooltipPopupTarget = null;
@@ -4805,7 +5078,8 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       zoneLabels: ZONE_LABELS,
       gameLabels: GAME_LABELS,
       hasReachedGlobalRank,
-      initAvatarSelector
+      initAvatarSelector,
+      onProfileRendered: initDailyReminderControls
     });
   }
   function initAvatarSelector(currentAvatar, globalRankLevel) {
@@ -5011,12 +5285,12 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     requestAnimationFrame(fitTargetStreetText);
   }), window.addEventListener("orientationchange", () => {
     requestAnimationFrame(fitTargetStreetText);
-  }), "serviceWorker" in navigator && window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then((e) => {
-      console.log("SW registered:", e.scope);
-      e.update().catch(() => {
-      });
-    }).catch((e) => console.warn("SW registration failed:", e));
+  }), window.addEventListener("load", () => {
+    if ("serviceWorker" in navigator) {
+      ensureServiceWorkerRegistration().catch(
+        (e) => console.warn("SW registration failed:", e)
+      );
+    }
     updateHapticsUI();
     const userPanelDetails = document.querySelector(".user-panel details");
     if (userPanelDetails) {

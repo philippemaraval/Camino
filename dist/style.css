@@ -2201,6 +2201,47 @@ button {
   font-size: 10px;
 }
 
+.profile-notification-card {
+  margin: 10px 0 8px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(18, 41, 122, 0.14);
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.profile-notification-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--primary-dark);
+  margin-bottom: 6px;
+}
+
+.profile-notification-status {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.profile-notification-status.is-error {
+  color: var(--state-danger);
+}
+
+.profile-notification-status.is-success {
+  color: var(--state-success);
+}
+
+.profile-notification-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.profile-notification-actions .btn-secondary,
+.profile-notification-actions .btn-tertiary {
+  flex: 1 1 auto;
+}
+
 .profile-member-since {
   font-size: 10px;
   color: var(--text-secondary);

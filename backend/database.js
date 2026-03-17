@@ -65,13 +65,34 @@ async function initDb() {
       )
     `);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        endpoint TEXT UNIQUE NOT NULL,
+        subscription_json JSONB NOT NULL,
+        enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        last_notified_on DATE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id
+      ON push_subscriptions (user_id)
+    `);
+
     // Migration: add columns if missing (safe to run multiple times)
     const migrations = [
       "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT '👤'",
       'ALTER TABLE scores ADD COLUMN IF NOT EXISTS items_correct INTEGER DEFAULT 0',
       'ALTER TABLE scores ADD COLUMN IF NOT EXISTS items_total INTEGER DEFAULT 0',
       'ALTER TABLE scores ADD COLUMN IF NOT EXISTS time_sec REAL DEFAULT 0',
-      'ALTER TABLE daily_targets ADD COLUMN IF NOT EXISTS geometry_json TEXT'
+      'ALTER TABLE daily_targets ADD COLUMN IF NOT EXISTS geometry_json TEXT',
+      'ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE',
+      'ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS last_notified_on DATE',
+      'ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()'
     ];
     for (const sql of migrations) {
       try { await client.query(sql); } catch (e) { /* already exists */ }
@@ -348,6 +369,94 @@ async function getDailyLeaderboard(date) {
     [date]
   );
   return res.rows;
+}
+
+// ── Push Notifications Helpers ──
+
+async function upsertPushSubscription(userId, subscription) {
+  const endpoint = String(subscription?.endpoint || '').trim();
+  if (!endpoint) {
+    throw new Error('Invalid push subscription endpoint');
+  }
+
+  await pool.query(
+    `INSERT INTO push_subscriptions (user_id, endpoint, subscription_json, enabled, updated_at)
+     VALUES ($1, $2, $3::jsonb, TRUE, NOW())
+     ON CONFLICT (endpoint)
+     DO UPDATE SET
+       user_id = EXCLUDED.user_id,
+       subscription_json = EXCLUDED.subscription_json,
+       enabled = TRUE,
+       updated_at = NOW()`,
+    [userId, endpoint, JSON.stringify(subscription)]
+  );
+}
+
+async function getPushSubscriptionStatusForUser(userId) {
+  const res = await pool.query(
+    `SELECT endpoint, enabled, updated_at
+     FROM push_subscriptions
+     WHERE user_id = $1 AND enabled = TRUE
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+    [userId]
+  );
+  return res.rows[0] || null;
+}
+
+async function removePushSubscriptionForUser(userId, endpoint) {
+  const normalizedEndpoint = String(endpoint || '').trim();
+  if (!normalizedEndpoint) {
+    return;
+  }
+  await pool.query(
+    'DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2',
+    [userId, normalizedEndpoint]
+  );
+}
+
+async function removeAllPushSubscriptionsForUser(userId) {
+  await pool.query(
+    'DELETE FROM push_subscriptions WHERE user_id = $1',
+    [userId]
+  );
+}
+
+async function removePushSubscriptionByEndpoint(endpoint) {
+  const normalizedEndpoint = String(endpoint || '').trim();
+  if (!normalizedEndpoint) {
+    return;
+  }
+  await pool.query(
+    'DELETE FROM push_subscriptions WHERE endpoint = $1',
+    [normalizedEndpoint]
+  );
+}
+
+async function listPushSubscriptionsDueForDate(dateStr) {
+  const res = await pool.query(
+    `SELECT endpoint, subscription_json
+     FROM push_subscriptions
+     WHERE enabled = TRUE
+       AND (last_notified_on IS NULL OR last_notified_on < $1::date)
+     ORDER BY updated_at ASC`,
+    [dateStr]
+  );
+  return res.rows;
+}
+
+async function markPushSubscriptionNotified(endpoint, dateStr) {
+  const normalizedEndpoint = String(endpoint || '').trim();
+  if (!normalizedEndpoint) {
+    return;
+  }
+  await pool.query(
+    `UPDATE push_subscriptions
+     SET last_notified_on = $1::date,
+         updated_at = NOW()
+     WHERE endpoint = $2`,
+    [dateStr, normalizedEndpoint]
+  );
 }
 
 // ── Player Profile Stats ──
@@ -726,6 +835,13 @@ module.exports = {
   getDailyUserStatus,
   updateDailyUserAttempt,
   getDailyLeaderboard,
+  upsertPushSubscription,
+  getPushSubscriptionStatusForUser,
+  removePushSubscriptionForUser,
+  removeAllPushSubscriptionsForUser,
+  removePushSubscriptionByEndpoint,
+  listPushSubscriptionsDueForDate,
+  markPushSubscriptionNotified,
   getUserStats,
   trackStreetAnswer,
   getAnalytics,
