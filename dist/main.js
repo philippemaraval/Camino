@@ -3370,6 +3370,16 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   function isPushReminderSupported() {
     return window.isSecureContext && "Notification" in window && "serviceWorker" in navigator && "PushManager" in window;
   }
+  function isIOSMobileDevice() {
+    const ua = window.navigator.userAgent || "";
+    const platform = window.navigator.platform || "";
+    const iPhoneOrIPad = /iPad|iPhone|iPod/i.test(ua);
+    const ipadOnDesktop = platform === "MacIntel" && window.navigator.maxTouchPoints > 1;
+    return iPhoneOrIPad || ipadOnDesktop;
+  }
+  function requiresInstalledAppForMobilePush() {
+    return isIOSMobileDevice() && !isStandaloneDisplayMode2();
+  }
   function formatReminderTimeLabel(reminder = DEFAULT_REMINDER_CONFIG) {
     const hour = Number.isInteger(reminder == null ? void 0 : reminder.hour) ? reminder.hour : DEFAULT_REMINDER_CONFIG.hour;
     const minute = Number.isInteger(reminder == null ? void 0 : reminder.minute) ? reminder.minute : DEFAULT_REMINDER_CONFIG.minute;
@@ -3466,6 +3476,14 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       setDailyReminderButtons({ canEnable: false, canDisable: false, loading: false });
       return;
     }
+    if (requiresInstalledAppForMobilePush()) {
+      setDailyReminderStatus(
+        "Sur iPhone/iPad, installe Camino via \u201CAjouter \xE0 l\u2019\xE9cran d\u2019accueil\u201D pour activer les notifications.",
+        "error"
+      );
+      setDailyReminderButtons({ canEnable: false, canDisable: false, loading: false });
+      return;
+    }
     if (!isPushReminderSupported()) {
       setDailyReminderStatus("Notifications push non disponibles sur ce navigateur.", "error");
       setDailyReminderButtons({ canEnable: false, canDisable: false, loading: false });
@@ -3517,6 +3535,18 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   async function enableDailyReminder() {
     if (!(currentUser && currentUser.token)) {
       showMessage("Connectez-vous pour activer le rappel Daily.", "warning");
+      return;
+    }
+    if (requiresInstalledAppForMobilePush()) {
+      setDailyReminderStatus(
+        "Installe Camino sur l\u2019\xE9cran d\u2019accueil pour activer les notifications sur iPhone/iPad.",
+        "error"
+      );
+      setDailyReminderButtons({ canEnable: false, canDisable: false, loading: false });
+      showMessage(
+        "Sur iPhone/iPad, les notifications push n\xE9cessitent la version install\xE9e (Ajouter \xE0 l\u2019\xE9cran d\u2019accueil).",
+        "warning"
+      );
       return;
     }
     setDailyReminderButtons({ loading: true });

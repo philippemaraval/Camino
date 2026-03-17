@@ -145,6 +145,18 @@ function isPushReminderSupported() {
   );
 }
 
+function isIOSMobileDevice() {
+  const ua = window.navigator.userAgent || "";
+  const platform = window.navigator.platform || "";
+  const iPhoneOrIPad = /iPad|iPhone|iPod/i.test(ua);
+  const ipadOnDesktop = platform === "MacIntel" && window.navigator.maxTouchPoints > 1;
+  return iPhoneOrIPad || ipadOnDesktop;
+}
+
+function requiresInstalledAppForMobilePush() {
+  return isIOSMobileDevice() && !isStandaloneDisplayMode();
+}
+
 function formatReminderTimeLabel(reminder = DEFAULT_REMINDER_CONFIG) {
   const hour = Number.isInteger(reminder?.hour) ? reminder.hour : DEFAULT_REMINDER_CONFIG.hour;
   const minute = Number.isInteger(reminder?.minute) ? reminder.minute : DEFAULT_REMINDER_CONFIG.minute;
@@ -260,6 +272,15 @@ async function refreshDailyReminderControls() {
     return;
   }
 
+  if (requiresInstalledAppForMobilePush()) {
+    setDailyReminderStatus(
+      "Sur iPhone/iPad, installe Camino via “Ajouter à l’écran d’accueil” pour activer les notifications.",
+      "error",
+    );
+    setDailyReminderButtons({ canEnable: false, canDisable: false, loading: false });
+    return;
+  }
+
   if (!isPushReminderSupported()) {
     setDailyReminderStatus("Notifications push non disponibles sur ce navigateur.", "error");
     setDailyReminderButtons({ canEnable: false, canDisable: false, loading: false });
@@ -319,6 +340,19 @@ async function refreshDailyReminderControls() {
 async function enableDailyReminder() {
   if (!(currentUser && currentUser.token)) {
     showMessage("Connectez-vous pour activer le rappel Daily.", "warning");
+    return;
+  }
+
+  if (requiresInstalledAppForMobilePush()) {
+    setDailyReminderStatus(
+      "Installe Camino sur l’écran d’accueil pour activer les notifications sur iPhone/iPad.",
+      "error",
+    );
+    setDailyReminderButtons({ canEnable: false, canDisable: false, loading: false });
+    showMessage(
+      "Sur iPhone/iPad, les notifications push nécessitent la version installée (Ajouter à l’écran d’accueil).",
+      "warning",
+    );
     return;
   }
 
