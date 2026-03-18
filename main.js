@@ -1,7 +1,10 @@
 (() => {
   // src/config.js
   var API_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.protocol === "file:" ? "http://localhost:3000" : "https://camino2.onrender.com";
+  var SESSION_SIZE = 20;
   var MAX_ERRORS_MARATHON = 3;
+  var MAX_TIME_SECONDS = 500;
+  var CHRONO_DURATION = 60;
   var MAX_POINTS_PER_ITEM = 10;
   var LEADERBOARD_VISIBLE_ROWS = 3;
   var MAX_LECTURE_SEARCH_RESULTS = 8;
@@ -1017,7 +1020,7 @@
         }
         html += `
           <section class="profile-notification-card">
-            <div class="profile-notification-title">Rappel Daily \xE0 10:00</div>
+            <div class="profile-notification-title">Rappel Daily</div>
             <p id="daily-reminder-status" class="profile-notification-status">Chargement\u2026</p>
             <div class="profile-notification-actions">
               <button type="button" id="daily-reminder-enable-btn" class="btn-secondary">Activer le rappel</button>
@@ -3598,10 +3601,18 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
         fetchNotificationStatus(),
         registration.pushManager.getSubscription()
       ]);
-      const isSubscribed = Boolean((serverStatus == null ? void 0 : serverStatus.subscribed) && browserSubscription);
+      const serverSubscribed = Boolean(serverStatus == null ? void 0 : serverStatus.subscribed);
+      const serverEndpoint = typeof (serverStatus == null ? void 0 : serverStatus.endpoint) === "string" ? serverStatus.endpoint : "";
+      const browserEndpoint = typeof (browserSubscription == null ? void 0 : browserSubscription.endpoint) === "string" ? browserSubscription.endpoint : "";
+      const isSubscribed = Boolean(serverSubscribed && browserEndpoint && browserEndpoint === serverEndpoint);
       if (isSubscribed) {
         setDailyReminderStatus(`Rappel actif tous les jours \xE0 ${scheduleLabel}.`, "success");
         setDailyReminderButtons({ canEnable: false, canDisable: true, loading: false });
+      } else if (serverSubscribed) {
+        setDailyReminderStatus(
+          `Rappel actif sur un autre appareil/navigateur. Active-le ici pour ${scheduleLabel}.`
+        );
+        setDailyReminderButtons({ canEnable: true, canDisable: false, loading: false });
       } else {
         setDailyReminderStatus(`Rappel inactif. Active-le pour ${scheduleLabel}.`);
         setDailyReminderButtons({ canEnable: true, canDisable: false, loading: false });
@@ -3872,8 +3883,8 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     if ("chrono" === e)
       return {
         label: "Rues trouv\xE9es",
-        legend: "Score = nombre de rues trouv\xE9es en 60 secondes.",
-        help: "<strong>Rues trouv\xE9es (Chrono)</strong><br>Le score correspond au nombre de rues trouv\xE9es dans le temps imparti (60 s).",
+        legend: `Score = nombre de rues trouv\xE9es en ${CHRONO_DURATION} secondes.`,
+        help: `<strong>Rues trouv\xE9es (Chrono)</strong><br>Le score correspond au nombre de rues trouv\xE9es dans le temps imparti (${CHRONO_DURATION} s).`,
         decimals: 0
       };
     return {
@@ -4402,7 +4413,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     requestAnimationFrame(function e() {
       if (null !== sessionStartTime && null !== streetStartTime && isSessionRunning && !isPaused && (currentTarget || currentMonumentTarget)) {
         const t = performance.now(), r = (t - sessionStartTime) / 1e3, a = (t - streetStartTime) / 1e3;
-        if (r >= 500 || a >= 500)
+        if ("classique" !== getGameMode() && MAX_TIME_SECONDS > 0 && (r >= MAX_TIME_SECONDS || a >= MAX_TIME_SECONDS))
           return endSession(), void requestAnimationFrame(e);
         if (isChronoMode && null !== chronoEndTime && t >= chronoEndTime)
           return endSession(), void requestAnimationFrame(e);
@@ -4599,7 +4610,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     const e = document.getElementById("quartier-select"), t = getZoneMode(), r = getGameMode(), a = document.getElementById("street-info");
     a && (a.textContent = "", a.style.display = "none"), clearHighlight(), activeSessionId = generateSessionId(), correctCount = 0, totalAnswered = 0, summaryData = [], weightedScore = 0, errorsCount = 0, isPaused = false, pauseStartTime = null, remainingChronoMs = null, updateScoreUI(), updateTimeUI(0, 0), updateScoreMetricUI(), updateWeightedScoreUI(), updateSessionProgressBar();
     const n = document.getElementById("summary");
-    if (n && (n.classList.add("hidden"), n.innerHTML = ""), clearSessionShareSlot(), isChronoMode = "chrono" === r, chronoEndTime = isChronoMode ? performance.now() + 6e4 : null, setLectureTooltipsEnabled(false), "lecture" === r) {
+    if (n && (n.classList.add("hidden"), n.innerHTML = ""), clearSessionShareSlot(), isChronoMode = "chrono" === r, chronoEndTime = isChronoMode ? performance.now() + CHRONO_DURATION * 1e3 : null, setLectureTooltipsEnabled(false), "lecture" === r) {
       isLectureMode = true, isSessionRunning = false, isChronoMode = false, chronoEndTime = null, sessionStartTime = null, streetStartTime = null, currentTarget = null, setLectureTooltipsEnabled(true), currentMonumentTarget = null, isPaused = false, pauseStartTime = null, remainingChronoMs = null, updateTargetPanelTitle(), updateLayoutSessionState(), "monuments" === t ? (streetsLayer && map.hasLayer(streetsLayer) && map.removeLayer(streetsLayer), monumentsLayer && !map.hasLayer(monumentsLayer) && monumentsLayer.addTo(map), clearQuartierOverlay()) : (monumentsLayer && map.hasLayer(monumentsLayer) && map.removeLayer(monumentsLayer), streetsLayer && !map.hasLayer(streetsLayer) && streetsLayer.addTo(map), "quartier" === t && e && e.value ? highlightQuartier(e.value) : clearQuartierOverlay()), (() => {
         const r3 = document.getElementById("target-street");
         r3 && ("monuments" === t ? (r3.textContent = "Mode lecture : survolez la carte", requestAnimationFrame(fitTargetStreetText)) : r3.textContent = "\u2014");
@@ -4629,7 +4640,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
           allMonuments.length
         );
       else {
-        const e3 = Math.min(20, allMonuments.length);
+        const e3 = Math.min(SESSION_SIZE, allMonuments.length);
         sessionMonuments = sampleWithoutReplacement(allMonuments, e3);
       }
       currentMonumentIndex = 0, currentMonumentTarget = null, currentTarget = null, isMonumentsMode = true, sessionStartTime = performance.now(), streetStartTime = null, isSessionRunning = true, updateStartStopButton(), updatePauseButton(), updateLayoutSessionState(), scrollSidebarToTargetPanel();
@@ -4654,7 +4665,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     else if ("chrono" === r)
       sessionStreets = sampleWithoutReplacement(i, i.length);
     else {
-      const e2 = Math.min(20, i.length);
+      const e2 = Math.min(SESSION_SIZE, i.length);
       sessionStreets = sampleWithoutReplacement(i, e2);
     }
     currentIndex = 0, "quartier" === t && e && e.value ? highlightQuartier(e.value) : clearQuartierOverlay(), monumentsLayer && map.hasLayer(monumentsLayer) && map.removeLayer(monumentsLayer), streetsLayer && !map.hasLayer(streetsLayer) && streetsLayer.addTo(map), sessionStartTime = performance.now(), currentTarget = null, currentMonumentTarget = null, streetStartTime = null, isSessionRunning = true, updateStartStopButton(), updatePauseButton(), updateLayoutSessionState(), scrollSidebarToTargetPanel();
@@ -5061,7 +5072,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     c.className = "summary-global";
     const m = document.createElement("h2");
     let p;
-    m.textContent = "R\xE9capitulatif de la session", c.appendChild(m), p = "marathon" === l ? `Mode : Marathon (max. ${MAX_ERRORS_MARATHON} erreurs)` : "chrono" === l ? "Mode : Chrono (60 s)" : "Mode : Classique (20 items max)", p += ` \u2013 Zone : ${o}`, u && (p += ` \u2013 Quartier : ${u}`);
+    m.textContent = "R\xE9capitulatif de la session", c.appendChild(m), p = "marathon" === l ? `Mode : Marathon (max. ${MAX_ERRORS_MARATHON} erreurs)` : "chrono" === l ? `Mode : Chrono (${CHRONO_DURATION} s)` : `Mode : Classique (${SESSION_SIZE} items max)`, p += ` \u2013 Zone : ${o}`, u && (p += ` \u2013 Quartier : ${u}`);
     const g = document.createElement("p");
     g.textContent = p, c.appendChild(g);
     const h = document.createElement("div");

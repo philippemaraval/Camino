@@ -314,13 +314,14 @@ async function getAllLeaderboards(limit = 100, options = {}) { // Increased limi
   );
 
   const result = {};
-  for (const { mode, game_type, quartier_name } of combos.rows) {
+  const loaders = combos.rows.map(async ({ mode, game_type, quartier_name }) => {
     let key = `${mode}|${game_type}`;
     if (quartier_name) key += `|${quartier_name}`;
     else if (mode === 'quartier') key += `|unknown`; // fallback for old scores
 
     result[key] = await getLeaderboard(mode, game_type, quartier_name, limit, { period });
-  }
+  });
+  await Promise.all(loaders);
   return result;
 }
 
@@ -666,59 +667,53 @@ async function getUserStats(userId) {
     [userId]
   );
 
-  // Daily streak calculation
-  const dailyHistory = await pool.query(
-    `SELECT date FROM daily_user_attempts
-     WHERE user_id = $1 AND success = TRUE
-     ORDER BY date ASC`,
+  const dailyStreaks = await pool.query(
+    `WITH success_dates AS (
+       SELECT DISTINCT date::date AS day
+       FROM daily_user_attempts
+       WHERE user_id = $1
+         AND success = TRUE
+         AND date ~ '^\\d{4}-\\d{2}-\\d{2}$'
+     ),
+     streak_groups AS (
+       SELECT
+         day,
+         (day - (ROW_NUMBER() OVER (ORDER BY day))::int) AS grp
+       FROM success_dates
+     ),
+     streaks AS (
+       SELECT
+         MIN(day) AS start_day,
+         MAX(day) AS end_day,
+         COUNT(*)::int AS streak_len
+       FROM streak_groups
+       GROUP BY grp
+     ),
+     today AS (
+       SELECT timezone('Europe/Paris', NOW())::date AS day
+     ),
+     latest AS (
+       SELECT end_day, streak_len
+       FROM streaks
+       ORDER BY end_day DESC
+       LIMIT 1
+     )
+     SELECT
+       COALESCE((SELECT MAX(streak_len) FROM streaks), 0)::int AS max_streak,
+       COALESCE((
+         SELECT
+           CASE
+             WHEN latest.end_day = today.day OR latest.end_day = (today.day - 1)
+               THEN latest.streak_len
+             ELSE 0
+           END
+         FROM latest
+         CROSS JOIN today
+       ), 0)::int AS current_streak`,
     [userId]
   );
-
-  let currentStreak = 0;
-  let maxStreak = 0;
-  
-  if (dailyHistory.rows.length > 0) {
-    const datesStr = dailyHistory.rows.map(r => r.date);
-    
-    let tempStreak = 1;
-    let localMax = 1;
-    
-    // Parse the actual current server date to see if streak is alive
-    // Assuming format YYYY-MM-DD
-    const todayObj = new Date();
-    const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
-    
-    const yestObj = new Date(todayObj);
-    yestObj.setDate(yestObj.getDate() - 1);
-    const yestStr = `${yestObj.getFullYear()}-${String(yestObj.getMonth() + 1).padStart(2, '0')}-${String(yestObj.getDate()).padStart(2, '0')}`;
-
-    for (let i = 1; i < datesStr.length; i++) {
-        const d1 = new Date(datesStr[i - 1]);
-        const d2 = new Date(datesStr[i]);
-        
-        // Difference in days
-        const diffTime = Math.abs(d2 - d1);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
-        if (diffDays === 1) {
-            tempStreak++;
-        } else if (diffDays > 1) {
-            if (tempStreak > localMax) localMax = tempStreak;
-            tempStreak = 1;
-        }
-    }
-    
-    if (tempStreak > localMax) localMax = tempStreak;
-    maxStreak = localMax;
-    
-    // Determine if streak is currently active
-    const lastDate = datesStr[datesStr.length - 1];
-    if (lastDate === todayStr || lastDate === yestStr) {
-       currentStreak = tempStreak;
-    } else {
-       currentStreak = 0;
-    }
-  }
+  const currentStreak = Number(dailyStreaks.rows[0]?.current_streak || 0);
+  const maxStreak = Number(dailyStreaks.rows[0]?.max_streak || 0);
 
   // Account creation date
   const userInfo = await pool.query(

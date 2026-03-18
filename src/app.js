@@ -361,10 +361,18 @@ async function refreshDailyReminderControls() {
       registration.pushManager.getSubscription(),
     ]);
 
-    const isSubscribed = Boolean(serverStatus?.subscribed && browserSubscription);
+    const serverSubscribed = Boolean(serverStatus?.subscribed);
+    const serverEndpoint = typeof serverStatus?.endpoint === "string" ? serverStatus.endpoint : "";
+    const browserEndpoint = typeof browserSubscription?.endpoint === "string" ? browserSubscription.endpoint : "";
+    const isSubscribed = Boolean(serverSubscribed && browserEndpoint && browserEndpoint === serverEndpoint);
     if (isSubscribed) {
       setDailyReminderStatus(`Rappel actif tous les jours à ${scheduleLabel}.`, "success");
       setDailyReminderButtons({ canEnable: false, canDisable: true, loading: false });
+    } else if (serverSubscribed) {
+      setDailyReminderStatus(
+        `Rappel actif sur un autre appareil/navigateur. Active-le ici pour ${scheduleLabel}.`,
+      );
+      setDailyReminderButtons({ canEnable: true, canDisable: false, loading: false });
     } else {
       setDailyReminderStatus(`Rappel inactif. Active-le pour ${scheduleLabel}.`);
       setDailyReminderButtons({ canEnable: true, canDisable: false, loading: false });
@@ -689,9 +697,9 @@ function getScoreMetricUIConfig(e = getGameMode()) {
   if ("chrono" === e)
     return {
       label: "Rues trouvées",
-      legend: "Score = nombre de rues trouvées en 60 secondes.",
+      legend: `Score = nombre de rues trouvées en ${CHRONO_DURATION} secondes.`,
       help:
-        "<strong>Rues trouvées (Chrono)</strong><br>Le score correspond au nombre de rues trouvées dans le temps imparti (60 s).",
+        `<strong>Rues trouvées (Chrono)</strong><br>Le score correspond au nombre de rues trouvées dans le temps imparti (${CHRONO_DURATION} s).`,
       decimals: 0,
     };
   return {
@@ -1561,7 +1569,7 @@ function startTimersLoop() {
       const t = performance.now(),
         r = (t - sessionStartTime) / 1e3,
         a = (t - streetStartTime) / 1e3;
-      if (r >= 500 || a >= 500)
+      if ("classique" !== getGameMode() && MAX_TIME_SECONDS > 0 && (r >= MAX_TIME_SECONDS || a >= MAX_TIME_SECONDS))
         return (endSession(), void requestAnimationFrame(e));
       if (isChronoMode && null !== chronoEndTime && t >= chronoEndTime)
         return (endSession(), void requestAnimationFrame(e));
@@ -1849,7 +1857,7 @@ function startNewSession() {
     (n && ((n.classList.add("hidden"), (n.innerHTML = ""))),
       clearSessionShareSlot(),
       (isChronoMode = "chrono" === r),
-      (chronoEndTime = isChronoMode ? performance.now() + 6e4 : null),
+      (chronoEndTime = isChronoMode ? performance.now() + CHRONO_DURATION * 1e3 : null),
       setLectureTooltipsEnabled(!1),
       "lecture" === r)
   ) {
@@ -1939,7 +1947,7 @@ function startNewSession() {
         allMonuments.length,
       );
     else {
-      const e = Math.min(20, allMonuments.length);
+      const e = Math.min(SESSION_SIZE, allMonuments.length);
       sessionMonuments = sampleWithoutReplacement(allMonuments, e);
     }
     ((currentMonumentIndex = 0),
@@ -1983,7 +1991,7 @@ function startNewSession() {
   else if ("chrono" === r)
     sessionStreets = sampleWithoutReplacement(i, i.length);
   else {
-    const e = Math.min(20, i.length);
+    const e = Math.min(SESSION_SIZE, i.length);
     sessionStreets = sampleWithoutReplacement(i, e);
   }
   ((currentIndex = 0),
@@ -2679,8 +2687,8 @@ function endSession() {
       "marathon" === l
         ? `Mode : Marathon (max. ${MAX_ERRORS_MARATHON} erreurs)`
         : "chrono" === l
-          ? "Mode : Chrono (60 s)"
-          : "Mode : Classique (20 items max)"),
+          ? `Mode : Chrono (${CHRONO_DURATION} s)`
+          : `Mode : Classique (${SESSION_SIZE} items max)`),
     (p += ` – Zone : ${o}`),
     u && (p += ` – Quartier : ${u}`));
   const g = document.createElement("p");

@@ -33,6 +33,10 @@ const ADMIN_API_KEY = process.env.ADMIN_API_KEY || '';
 const PUSH_REMINDER_HOUR = readEnvIntegerInRange('PUSH_REMINDER_HOUR', 10, 0, 23);
 const PUSH_REMINDER_MINUTE = readEnvIntegerInRange('PUSH_REMINDER_MINUTE', 0, 0, 59);
 const PUSH_REMINDER_TIMEZONE = process.env.PUSH_REMINDER_TIMEZONE || 'Europe/Paris';
+const DAILY_TIMEZONE = process.env.DAILY_TIMEZONE || PUSH_REMINDER_TIMEZONE || 'Europe/Paris';
+const LOGIN_RATE_LIMIT_WINDOW_MS = readEnvIntegerInRange('LOGIN_RATE_LIMIT_WINDOW_MS', 10 * 60 * 1000, 1_000, 3_600_000);
+const LOGIN_RATE_LIMIT_MAX_ATTEMPTS = readEnvIntegerInRange('LOGIN_RATE_LIMIT_MAX_ATTEMPTS', 8, 1, 100);
+const LOGIN_RATE_LIMIT_BLOCK_MS = readEnvIntegerInRange('LOGIN_RATE_LIMIT_BLOCK_MS', 10 * 60 * 1000, 1_000, 3_600_000);
 const ENV_VAPID_SUBJECT = readFirstDefinedEnv([
     'VAPID_SUBJECT',
     'WEB_PUSH_VAPID_SUBJECT',
@@ -60,6 +64,7 @@ const pushRuntime = {
     source: 'none',
 };
 let pushRuntimeSignature = '';
+const loginRateLimitStore = new Map();
 
 if (!JWT_SECRET_KEY) {
     if (IS_PRODUCTION) {
@@ -335,6 +340,10 @@ function getTimePartsInZone(date, timeZone) {
     };
 }
 
+function getDateKeyInZone(timeZone) {
+    return getTimePartsInZone(new Date(), timeZone).dateStr;
+}
+
 function isValidPushSubscription(subscription) {
     if (!subscription || typeof subscription !== 'object') {
         return false;
@@ -486,6 +495,54 @@ function parseDailyGuessSubmission(body) {
     };
 }
 
+function getRequestIp(req) {
+    const forwardedRaw = req.headers['x-forwarded-for'];
+    if (typeof forwardedRaw === 'string' && forwardedRaw.trim()) {
+        return forwardedRaw.split(',')[0].trim();
+    }
+    if (Array.isArray(forwardedRaw) && forwardedRaw.length > 0) {
+        return String(forwardedRaw[0] || '').trim();
+    }
+    return (req.ip || req.socket?.remoteAddress || 'unknown').trim();
+}
+
+function buildLoginRateLimitKey(req, username) {
+    return `${getRequestIp(req)}::${String(username || '').trim().toLowerCase() || '<empty>'}`;
+}
+
+function getRateLimitEntry(now, key) {
+    const existing = loginRateLimitStore.get(key);
+    const entry = existing || { attempts: [], blockedUntil: 0 };
+    entry.attempts = entry.attempts.filter((ts) => now - ts <= LOGIN_RATE_LIMIT_WINDOW_MS);
+    if (entry.blockedUntil < now) {
+        entry.blockedUntil = 0;
+    }
+    loginRateLimitStore.set(key, entry);
+    return entry;
+}
+
+function isLoginRateLimited(now, key) {
+    const entry = getRateLimitEntry(now, key);
+    if (entry.blockedUntil > now) {
+        return Math.max(1, Math.ceil((entry.blockedUntil - now) / 1000));
+    }
+    return 0;
+}
+
+function registerLoginFailure(now, key) {
+    const entry = getRateLimitEntry(now, key);
+    entry.attempts.push(now);
+    if (entry.attempts.length >= LOGIN_RATE_LIMIT_MAX_ATTEMPTS) {
+        entry.blockedUntil = now + LOGIN_RATE_LIMIT_BLOCK_MS;
+        entry.attempts = [];
+    }
+    loginRateLimitStore.set(key, entry);
+}
+
+function clearLoginRateLimit(key) {
+    loginRateLimitStore.delete(key);
+}
+
 // ----------------------
 // Auth Routes
 // ----------------------
@@ -504,13 +561,28 @@ app.post('/api/register', asyncHandler(async (req, res) => {
 }));
 
 app.post('/api/login', asyncHandler(async (req, res) => {
-    const { username, password } = req.body;
+    const username = String(req.body?.username || '').trim();
+    const password = String(req.body?.password || '');
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Missing fields' });
+    }
+
+    const now = Date.now();
+    const rateKey = buildLoginRateLimitKey(req, username);
+    const retryAfterSec = isLoginRateLimited(now, rateKey);
+    if (retryAfterSec > 0) {
+        res.setHeader('Retry-After', String(retryAfterSec));
+        return res.status(429).json({ error: 'Too many login attempts, try again later' });
+    }
+
     const user = await db.getUser(username);
 
     if (!user || !db.verifyPassword(user, password)) {
+        registerLoginFailure(now, rateKey);
         return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    clearLoginRateLimit(rateKey);
     const token = jwt.sign({ id: user.id, username: user.username }, EFFECTIVE_JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, username: user.username, avatar: user.avatar || '👤' });
 }));
@@ -856,7 +928,7 @@ function dateHash(dateStr) {
 }
 
 async function ensureDailyTarget() {
-    const date = new Date().toISOString().split('T')[0];
+    const date = getDateKeyInZone(DAILY_TIMEZONE);
     let target = await db.getDailyTarget(date);
     
     if (!target && streetIndex.length > 0) {
@@ -984,7 +1056,7 @@ app.post('/api/daily/guess', authenticateToken, asyncHandler(async (req, res) =>
 
 app.get('/api/daily/leaderboard', async (req, res) => {
     try {
-        const date = new Date().toISOString().split('T')[0];
+        const date = getDateKeyInZone(DAILY_TIMEZONE);
         const rows = await db.getDailyLeaderboard(date);
         res.json(rows);
     } catch (err) {
