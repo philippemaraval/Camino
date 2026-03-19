@@ -15,8 +15,17 @@ export function normalizeQuartierKey(quartierName) {
   }
 
   normalized = normalized.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  normalized = normalized.replace(/[’`´]/g, "'");
+  normalized = normalized.replace(/[-‐‑‒–—]/g, "-");
+  normalized = normalized.replace(/\s*-\s*/g, "-");
   normalized = normalized.replace(/\s+/g, " ").toLowerCase();
   return normalized;
+}
+
+function isSameQuartierName(leftQuartierName, rightQuartierName) {
+  const left = normalizeQuartierKey(leftQuartierName);
+  const right = normalizeQuartierKey(rightQuartierName);
+  return left !== "" && right !== "" && left === right;
 }
 
 const FREE_MODE_EXCLUDED_PREFIXES = new Set([
@@ -130,7 +139,11 @@ export function getBaseStreetStyle({
     famousStreetNames,
   });
 
-  if (zoneMode === "quartier" && selectedQuartier && (feature?.properties?.quartier || null) !== selectedQuartier) {
+  if (
+    zoneMode === "quartier" &&
+    selectedQuartier &&
+    !isSameQuartierName(feature?.properties?.quartier || null, selectedQuartier)
+  ) {
     style = { color: "#00000000", weight: 0 };
   }
   return style;
@@ -162,7 +175,7 @@ export function isStreetVisibleInCurrentMode({
     }
 
     const cleanQuartierName = typeof quartierName === "string" ? quartierName.trim() : null;
-    if (selectedQuartier && cleanQuartierName !== selectedQuartier) {
+    if (selectedQuartier && !isSameQuartierName(cleanQuartierName, selectedQuartier)) {
       return false;
     }
   }
@@ -187,7 +200,7 @@ export function getCurrentZoneStreets({
       (feature) =>
         feature.properties &&
         typeof feature.properties.quartier === "string" &&
-        feature.properties.quartier === selectedQuartier &&
+        isSameQuartierName(feature.properties.quartier, selectedQuartier) &&
         !isExcludedFromVilleAndQuartier(normalizeName(feature.properties.name)),
     );
   }
@@ -240,15 +253,19 @@ export function populateQuartiersUI({
     return;
   }
 
-  const quartiersSet = new Set();
+  const quartiersByKey = new Map();
   allStreetFeatures.forEach((feature) => {
     const quartierName = (feature.properties || {}).quartier;
     if (typeof quartierName === "string" && quartierName.trim() !== "") {
-      quartiersSet.add(quartierName.trim());
+      const trimmed = quartierName.trim();
+      const quartierKey = normalizeQuartierKey(trimmed);
+      if (quartierKey && !quartiersByKey.has(quartierKey)) {
+        quartiersByKey.set(quartierKey, trimmed);
+      }
     }
   });
 
-  const quartiers = Array.from(quartiersSet).sort((left, right) =>
+  const quartiers = Array.from(quartiersByKey.values()).sort((left, right) =>
     left.localeCompare(right, "fr", { sensitivity: "base" }),
   );
 

@@ -1359,8 +1359,16 @@
       normalized = `${article} ${body}`;
     }
     normalized = normalized.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    normalized = normalized.replace(/[’`´]/g, "'");
+    normalized = normalized.replace(/[-‐‑‒–—]/g, "-");
+    normalized = normalized.replace(/\s*-\s*/g, "-");
     normalized = normalized.replace(/\s+/g, " ").toLowerCase();
     return normalized;
+  }
+  function isSameQuartierName(leftQuartierName, rightQuartierName) {
+    const left = normalizeQuartierKey(leftQuartierName);
+    const right = normalizeQuartierKey(rightQuartierName);
+    return left !== "" && right !== "" && left === right;
   }
   var FREE_MODE_EXCLUDED_PREFIXES = /* @__PURE__ */ new Set([
     "residence",
@@ -1453,7 +1461,7 @@
       mainStreetNames,
       famousStreetNames
     });
-    if (zoneMode === "quartier" && selectedQuartier && (((_b = feature == null ? void 0 : feature.properties) == null ? void 0 : _b.quartier) || null) !== selectedQuartier) {
+    if (zoneMode === "quartier" && selectedQuartier && !isSameQuartierName(((_b = feature == null ? void 0 : feature.properties) == null ? void 0 : _b.quartier) || null, selectedQuartier)) {
       style = { color: "#00000000", weight: 0 };
     }
     return style;
@@ -1480,7 +1488,7 @@
         return false;
       }
       const cleanQuartierName = typeof quartierName === "string" ? quartierName.trim() : null;
-      if (selectedQuartier && cleanQuartierName !== selectedQuartier) {
+      if (selectedQuartier && !isSameQuartierName(cleanQuartierName, selectedQuartier)) {
         return false;
       }
     }
@@ -1499,7 +1507,7 @@
   }) {
     if (zoneMode === "quartier" && selectedQuartier) {
       return allStreetFeatures2.filter(
-        (feature) => feature.properties && typeof feature.properties.quartier === "string" && feature.properties.quartier === selectedQuartier && !isExcludedFromVilleAndQuartier(normalizeName2(feature.properties.name))
+        (feature) => feature.properties && typeof feature.properties.quartier === "string" && isSameQuartierName(feature.properties.quartier, selectedQuartier) && !isExcludedFromVilleAndQuartier(normalizeName2(feature.properties.name))
       );
     }
     if (zoneMode === "rues-principales" || zoneMode === "main") {
@@ -1547,14 +1555,18 @@
     if (!nativeSelect) {
       return;
     }
-    const quartiersSet = /* @__PURE__ */ new Set();
+    const quartiersByKey = /* @__PURE__ */ new Map();
     allStreetFeatures2.forEach((feature) => {
       const quartierName = (feature.properties || {}).quartier;
       if (typeof quartierName === "string" && quartierName.trim() !== "") {
-        quartiersSet.add(quartierName.trim());
+        const trimmed = quartierName.trim();
+        const quartierKey = normalizeQuartierKey(trimmed);
+        if (quartierKey && !quartiersByKey.has(quartierKey)) {
+          quartiersByKey.set(quartierKey, trimmed);
+        }
       }
     });
-    const quartiers = Array.from(quartiersSet).sort(
+    const quartiers = Array.from(quartiersByKey.values()).sort(
       (left, right) => left.localeCompare(right, "fr", { sensitivity: "base" })
     );
     nativeSelect.innerHTML = "";
@@ -4342,7 +4354,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       "quartier" === getZoneMode() && a.value ? highlightQuartier(a.value) : clearQuartierOverlay(), streetsLayer && streetLayersById.size && streetLayersById.forEach((e2) => {
         const t2 = getBaseStreetStyle2(e2), r2 = t2.weight > 0;
         e2.setStyle({ color: t2.color, weight: t2.weight }), e2.options.interactive = r2, e2.touchBuffer && (e2.touchBuffer.options.interactive = r2);
-      }), isLectureMode && refreshLectureStreetSearchForCurrentMode({ preserveQuery: true });
+      }), refreshLectureTooltipsIfNeeded(), isLectureMode && refreshLectureStreetSearchForCurrentMode({ preserveQuery: true });
     });
     const T = document.getElementById("auth-feedback");
     function E(e2, t2) {
@@ -4770,7 +4782,8 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     }
     if ("quartier" === a) {
       const t2 = getSelectedQuartier(), r2 = e.properties && "string" == typeof e.properties.quartier ? e.properties.quartier.trim() : null;
-      if (t2 && r2 !== t2) return;
+      if (t2 && normalizeQuartierKey(r2) !== normalizeQuartierKey(t2))
+        return;
     }
     if (isPaused) return;
     if (isDailyMode) {

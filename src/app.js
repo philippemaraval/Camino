@@ -1440,6 +1440,7 @@ function initUI() {
             (e.options.interactive = r),
             e.touchBuffer && (e.touchBuffer.options.interactive = r));
         }),
+        refreshLectureTooltipsIfNeeded(),
         isLectureMode &&
         refreshLectureStreetSearchForCurrentMode({ preserveQuery: !0 }));
     }));
@@ -2185,7 +2186,11 @@ function handleStreetClick(e, t, r) {
         e.properties && "string" == typeof e.properties.quartier
           ? e.properties.quartier.trim()
           : null;
-    if (t && r !== t) return;
+    if (
+      t &&
+      normalizeQuartierKey(r) !== normalizeQuartierKey(t)
+    )
+      return;
   }
   if (isPaused) return;
   if (isDailyMode) {
