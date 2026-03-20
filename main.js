@@ -4852,13 +4852,13 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       }), saveDailyGuessesToStorage();
       const u = dailyGuessHistory.length, d = 7 - u;
       if (n2) {
-        window._dailyGameOver = true, isSessionRunning = false, document.body.classList.add("daily-game-over"), typeof confetti === "function" && confetti({ particleCount: 150, zIndex: 1e4, spread: 80, origin: { y: 0.6 } }), showMessage(
+        window._dailyGameOver = true, document.body.classList.add("daily-game-over"), typeof confetti === "function" && confetti({ particleCount: 150, zIndex: 1e4, spread: 80, origin: { y: 0.6 } }), showMessage(
           `\u{1F389} BRAVO ! Trouv\xE9 en ${u} essai${u > 1 ? "s" : ""} !`,
           "success"
         ), triggerHaptic("success"), renderDailyGuessHistory({ success: true, attempts: u });
         setTargetPanelTitleText("\u{1F389} D\xE9fi r\xE9ussi !"), updateTargetItemCounter(), revealDailyTargetStreet(true);
       } else if (d <= 0) {
-        window._dailyGameOver = true, isSessionRunning = false, document.body.classList.add("daily-game-over"), showMessage(
+        window._dailyGameOver = true, document.body.classList.add("daily-game-over"), showMessage(
           `\u274C Dommage ! C'\xE9tait \xAB ${dailyTargetData.streetName} \xBB. Fin du d\xE9fi.`,
           "error"
         ), triggerHaptic("error"), renderDailyGuessHistory({ success: false });

@@ -2286,7 +2286,6 @@ function handleStreetClick(e, t, r) {
       d = 7 - u;
     if (n) {
       ((window._dailyGameOver = !0),
-        (isSessionRunning = !1),
         document.body.classList.add("daily-game-over"),
         typeof confetti === "function" && confetti({ particleCount: 150, zIndex: 10000, spread: 80, origin: { y: 0.6 } }),
         showMessage(
@@ -2300,7 +2299,6 @@ function handleStreetClick(e, t, r) {
         revealDailyTargetStreet(!0));
     } else if (d <= 0) {
       ((window._dailyGameOver = !0),
-        (isSessionRunning = !1),
         document.body.classList.add("daily-game-over"),
         showMessage(
           `❌ Dommage ! C'était « ${dailyTargetData.streetName} ». Fin du défi.`,
