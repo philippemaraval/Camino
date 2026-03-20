@@ -1,8 +1,12 @@
-const CACHE_NAME = "camino-v6";
+const CACHE_NAME = "camino-v7";
 
 const CORE_PRECACHE_URLS = [
   "/",
   "/index.html",
+  "/profil.html",
+  "/classement.html",
+  "/daily-resultats.html",
+  "/regles.html",
   "/style.css",
   "/main.js",
   "/data_rules.js",

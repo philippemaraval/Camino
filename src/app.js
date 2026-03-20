@@ -3413,6 +3413,7 @@ function loadProfile() {
       updateUserUI();
       showMessage("Session expirée, reconnectez-vous.", "warning");
     },
+    variant: "compact",
   });
 }
 
