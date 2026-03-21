@@ -3,7 +3,7 @@ import { API_URL, LEADERBOARD_VISIBLE_ROWS } from "./config.js";
 const TITLE_THRESHOLDS_BY_MODE = {
   classique: {
     "rues-celebres": { M: 60, H: 100, V: 140, MV: 180 },
-    "quartiers-ville": { M: 40, H: 80, V: 120, MV: 160 },
+    "quartiers-ville": { M: 60, H: 100, V: 140, MV: 180 },
     "rues-principales": { M: 50, H: 90, V: 130, MV: 170 },
     quartier: { M: 40, H: 80, V: 120, MV: 160 },
     ville: { M: 30, H: 70, V: 110, MV: 150 },
@@ -11,14 +11,14 @@ const TITLE_THRESHOLDS_BY_MODE = {
   },
   marathon: {
     "rues-celebres": { M: 10, H: 20, V: 35, MV: 55 },
-    "quartiers-ville": { M: 9, H: 18, V: 30, MV: 46 },
+    "quartiers-ville": { M: 10, H: 20, V: 35, MV: 55 },
     "rues-principales": { M: 9, H: 18, V: 30, MV: 48 },
     ville: { M: 8, H: 16, V: 28, MV: 44 },
     monuments: { M: 9, H: 18, V: 30, MV: 46 },
   },
   chrono: {
     "rues-celebres": { M: 7, H: 11, V: 16, MV: 22 },
-    "quartiers-ville": { M: 5, H: 8, V: 12, MV: 16 },
+    "quartiers-ville": { M: 7, H: 11, V: 16, MV: 22 },
     "rues-principales": { M: 6, H: 10, V: 14, MV: 19 },
     quartier: { M: 5, H: 8, V: 12, MV: 16 },
     ville: { M: 4, H: 7, V: 10, MV: 14 },
@@ -205,7 +205,7 @@ export const AVATAR_UNLOCKS = [
   },
   {
     emoji: "👽",
-    name: "Alien",
+    name: "Ovni",
     desc: "Atteindre Maire sur la Ville Entière (Tous modes)",
     check: (userStats) => hasReachedVilleRank(userStats, "MV"),
   },
@@ -312,7 +312,7 @@ function appendZoneLeaderboards(rootElement, boards) {
         if (gameType === "chrono") {
           header += "<th>Temps</th>";
         }
-        header += "<th>Parties</th></tr>";
+        header += "</tr>";
         thead.innerHTML = header;
         table.appendChild(thead);
 
@@ -347,7 +347,6 @@ function appendZoneLeaderboards(rootElement, boards) {
           if (gameType === "chrono") {
             rowHtml += `<td>${(row.time_sec || 0).toFixed(1)}s</td>`;
           }
-          rowHtml += `<td>${row.games_played || 0}</td>`;
           tr.innerHTML = rowHtml;
 
           if (index < LEADERBOARD_VISIBLE_ROWS) {
