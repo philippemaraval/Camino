@@ -475,6 +475,35 @@ select:focus {
   z-index: 70 !important;
 }
 
+.params-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.friends-challenge-toggle {
+  width: auto;
+  min-width: 120px;
+  min-height: 0;
+  margin: 0;
+  padding: 4px 10px;
+  font-size: var(--fs-xs);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.friends-challenge-toggle.is-on {
+  background: linear-gradient(135deg, var(--brand-sun-500) 0, var(--brand-terra-500) 100%);
+  border-color: rgba(201, 107, 59, 0.7);
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(242, 169, 0, 0.28);
+}
+
+.friends-challenge-toggle:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
 .tries-counter {
   position: absolute;
   top: 12px;
@@ -1734,6 +1763,53 @@ button {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+.friend-challenge-board-slot {
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid rgba(18, 41, 122, 0.14);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.friend-challenge-board-title {
+  margin: 0;
+  font-size: var(--fs-s);
+  font-weight: 800;
+  color: var(--primary-dark);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.friend-challenge-board-meta {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.friend-challenge-board-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.friend-challenge-copy-btn {
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 4px 10px;
+  font-size: var(--fs-xs);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.friend-challenge-board-empty {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
 }
 
 #leaderboard {

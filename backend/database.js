@@ -68,6 +68,38 @@ async function initDb() {
     `);
 
     await client.query(`
+      CREATE TABLE IF NOT EXISTS friend_challenges (
+        id SERIAL PRIMARY KEY,
+        code TEXT UNIQUE NOT NULL,
+        created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_by_username TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        game_type TEXT NOT NULL,
+        quartier_name TEXT,
+        target_type TEXT NOT NULL,
+        targets_json JSONB NOT NULL,
+        item_count INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        expires_at TIMESTAMPTZ
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS friend_challenge_scores (
+        id SERIAL PRIMARY KEY,
+        challenge_id INTEGER NOT NULL REFERENCES friend_challenges(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        score REAL NOT NULL,
+        items_correct INTEGER DEFAULT 0,
+        items_total INTEGER DEFAULT 0,
+        time_sec REAL DEFAULT 0,
+        submitted_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(challenge_id, user_id)
+      )
+    `);
+
+    await client.query(`
       CREATE TABLE IF NOT EXISTS push_subscriptions (
         id SERIAL PRIMARY KEY,
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -83,6 +115,16 @@ async function initDb() {
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id
       ON push_subscriptions (user_id)
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_friend_challenges_code
+      ON friend_challenges (code)
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_friend_challenge_scores_challenge
+      ON friend_challenge_scores (challenge_id)
     `);
 
     // Migration: add columns if missing (safe to run multiple times)
@@ -360,6 +402,196 @@ async function getAllLeaderboards(limit = 100, options = {}) { // Increased limi
   });
   await Promise.all(loaders);
   return result;
+}
+
+// ── Friend Challenge Helpers ──
+
+async function createFriendChallenge({
+  code,
+  createdByUserId,
+  createdByUsername,
+  mode,
+  gameType,
+  quartierName,
+  targetType,
+  targetNames,
+  expiresAt,
+}) {
+  const result = await pool.query(
+    `INSERT INTO friend_challenges (
+       code,
+       created_by_user_id,
+       created_by_username,
+       mode,
+       game_type,
+       quartier_name,
+       target_type,
+       targets_json,
+       item_count,
+       expires_at
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
+     RETURNING
+       id,
+       code,
+       created_by_user_id,
+       created_by_username,
+       mode,
+       game_type,
+       quartier_name,
+       target_type,
+       targets_json,
+       item_count,
+       created_at,
+       expires_at`,
+    [
+      code,
+      createdByUserId,
+      createdByUsername,
+      mode,
+      gameType,
+      quartierName || null,
+      targetType,
+      JSON.stringify(Array.isArray(targetNames) ? targetNames : []),
+      Array.isArray(targetNames) ? targetNames.length : 0,
+      expiresAt || null,
+    ]
+  );
+  return result.rows[0] || null;
+}
+
+async function getFriendChallengeByCode(code) {
+  const result = await pool.query(
+    `SELECT
+       id,
+       code,
+       created_by_user_id,
+       created_by_username,
+       mode,
+       game_type,
+       quartier_name,
+       target_type,
+       targets_json,
+       item_count,
+       created_at,
+       expires_at
+     FROM friend_challenges
+     WHERE code = $1
+       AND (expires_at IS NULL OR expires_at > NOW())
+     LIMIT 1`,
+    [code]
+  );
+  return result.rows[0] || null;
+}
+
+async function hasPlayedFriendChallenge(challengeId, userId) {
+  const challenge = Number.parseInt(challengeId, 10);
+  const user = Number.parseInt(userId, 10);
+  if (!Number.isInteger(challenge) || challenge <= 0 || !Number.isInteger(user) || user <= 0) {
+    return false;
+  }
+
+  const result = await pool.query(
+    `SELECT 1
+     FROM friend_challenge_scores
+     WHERE challenge_id = $1 AND user_id = $2
+     LIMIT 1`,
+    [challenge, user]
+  );
+  return result.rowCount > 0;
+}
+
+async function addFriendChallengeScore(
+  challengeId,
+  userId,
+  score,
+  itemsCorrect,
+  itemsTotal,
+  timeSec,
+  gameType
+) {
+  const result = await pool.query(
+    `INSERT INTO friend_challenge_scores (
+       challenge_id,
+       user_id,
+       score,
+       items_correct,
+       items_total,
+       time_sec
+     )
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (challenge_id, user_id) DO UPDATE SET
+       score = EXCLUDED.score,
+       items_correct = EXCLUDED.items_correct,
+       items_total = EXCLUDED.items_total,
+       time_sec = EXCLUDED.time_sec,
+       updated_at = NOW()
+     WHERE
+       (
+         CASE
+           WHEN $7 = 'classique' THEN EXCLUDED.score::double precision
+           ELSE EXCLUDED.items_correct::double precision
+         END
+       ) >
+       (
+         CASE
+           WHEN $7 = 'classique' THEN friend_challenge_scores.score::double precision
+           ELSE friend_challenge_scores.items_correct::double precision
+         END
+       )
+       OR (
+         (
+           CASE
+             WHEN $7 = 'classique' THEN EXCLUDED.score::double precision
+             ELSE EXCLUDED.items_correct::double precision
+           END
+         ) =
+         (
+           CASE
+             WHEN $7 = 'classique' THEN friend_challenge_scores.score::double precision
+             ELSE friend_challenge_scores.items_correct::double precision
+           END
+         )
+         AND EXCLUDED.time_sec::double precision < friend_challenge_scores.time_sec::double precision
+       )
+     RETURNING id`,
+    [
+      challengeId,
+      userId,
+      score,
+      itemsCorrect || 0,
+      itemsTotal || 0,
+      timeSec || 0,
+      gameType,
+    ]
+  );
+  return result.rowCount > 0;
+}
+
+async function getFriendChallengeLeaderboard(challengeId, gameType, limit = 20) {
+  const parsedLimit = Number.isInteger(limit) && limit > 0 ? limit : 20;
+  const result = await pool.query(
+    `SELECT
+       u.username,
+       COALESCE(u.avatar, '👤') AS avatar,
+       s.score,
+       s.items_correct,
+       s.items_total,
+       s.time_sec
+     FROM friend_challenge_scores s
+     JOIN users u ON s.user_id = u.id
+     WHERE s.challenge_id = $1
+     ORDER BY
+       CASE
+         WHEN $2 = 'classique' THEN s.score::double precision
+         ELSE s.items_correct::double precision
+       END DESC,
+       s.time_sec ASC,
+       s.submitted_at ASC
+     LIMIT $3`,
+    [challengeId, gameType, parsedLimit]
+  );
+  return result.rows;
 }
 
 // ── Daily Challenge Helpers ──
@@ -926,6 +1158,11 @@ module.exports = {
   addScore,
   getLeaderboard,
   getAllLeaderboards,
+  createFriendChallenge,
+  getFriendChallengeByCode,
+  hasPlayedFriendChallenge,
+  addFriendChallengeScore,
+  getFriendChallengeLeaderboard,
   getDailyTarget,
   getRecentDailyTargets,
   setDailyTarget,

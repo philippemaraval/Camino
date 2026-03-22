@@ -218,6 +218,13 @@ function normalizeName(e) {
 function normalizeSearchText(e) {
   return normalizeName(e).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
+function normalizeChallengeNameKey(e) {
+  return normalizeSearchText(e)
+    .replace(/[’`´]/g, "'")
+    .replace(/[-‐‑‒–—]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function toPushServerKeyUint8Array(base64String) {
   const normalized = String(base64String || "").trim();
@@ -777,7 +784,22 @@ let sessionStreets = [],
   isLectureMode = !1,
   hasAnsweredCurrentItem = !1,
   lectureStreetSearchIndex = [],
-  lectureStreetSearchMatches = [];
+  lectureStreetSearchMatches = [],
+  isApplyingFriendChallengeConfig = !1,
+  activeFriendChallenge = null,
+  friendChallengeInitPromise = null,
+  pendingFriendChallengeQuartierName = null;
+
+const FRIEND_CHALLENGE_QUERY_PARAM = "defi";
+const FRIEND_CHALLENGE_ALLOWED_GAME_MODES = new Set(["classique", "marathon", "chrono"]);
+const FRIEND_CHALLENGE_ALLOWED_ZONE_MODES = new Set([
+  "ville",
+  "quartier",
+  "quartiers-ville",
+  "rues-principales",
+  "rues-celebres",
+  "monuments",
+]);
 function getSessionScoreValue(e = getGameMode()) {
   return "classique" === e ? weightedScore : correctCount;
 }
@@ -995,9 +1017,600 @@ function generateSessionId() {
   return `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
 }
 
+function normalizeFriendChallengePayload(payload) {
+  const code = String(payload?.code || "").trim().toUpperCase();
+  const mode = String(payload?.mode || "").trim();
+  const gameType = String(payload?.gameType || "").trim();
+  const targetType = String(payload?.targetType || "").trim() || "street";
+  const targetNames = Array.isArray(payload?.targetNames)
+    ? payload.targetNames
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+    : [];
+  if (
+    !/^[A-Z0-9]{10}$/.test(code) ||
+    !FRIEND_CHALLENGE_ALLOWED_ZONE_MODES.has(mode) ||
+    !FRIEND_CHALLENGE_ALLOWED_GAME_MODES.has(gameType) ||
+    targetNames.length < 1
+  ) {
+    return null;
+  }
+  return {
+    code,
+    mode,
+    gameType,
+    quartierName: typeof payload?.quartierName === "string" ? payload.quartierName.trim() : null,
+    targetType,
+    targetNames,
+    itemCount: Number.parseInt(payload?.itemCount, 10) || targetNames.length,
+    sharePath: typeof payload?.sharePath === "string" ? payload.sharePath : "",
+    createdBy: payload?.createdBy || null,
+  };
+}
+
+function getFriendChallengeCodeFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    return String(url.searchParams.get(FRIEND_CHALLENGE_QUERY_PARAM) || "").trim().toUpperCase();
+  } catch (error) {
+    return "";
+  }
+}
+
+function updateFriendChallengeCodeInUrl(code) {
+  try {
+    const url = new URL(window.location.href);
+    if (code) {
+      url.searchParams.set(FRIEND_CHALLENGE_QUERY_PARAM, code);
+    } else {
+      url.searchParams.delete(FRIEND_CHALLENGE_QUERY_PARAM);
+    }
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState({}, "", next);
+  } catch (error) {
+    console.warn("Friend challenge URL sync failed:", error);
+  }
+}
+
+function buildFriendChallengeShareUrl(challenge) {
+  if (!challenge) {
+    return "";
+  }
+  if (challenge.sharePath) {
+    try {
+      return new URL(challenge.sharePath, window.location.origin).toString();
+    } catch (error) {
+      // Fallback below.
+    }
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.set(FRIEND_CHALLENGE_QUERY_PARAM, challenge.code);
+  return url.toString();
+}
+
+async function copyTextToClipboard(text) {
+  const value = String(text || "").trim();
+  if (!value) {
+    return !1;
+  }
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    try {
+      await navigator.clipboard.writeText(value);
+      return !0;
+    } catch (error) {
+      // Fallback below.
+    }
+  }
+  const input = document.createElement("textarea");
+  input.value = value;
+  input.setAttribute("readonly", "readonly");
+  input.style.position = "fixed";
+  input.style.opacity = "0";
+  input.style.pointerEvents = "none";
+  document.body.appendChild(input);
+  input.select();
+  let copied = !1;
+  try {
+    copied = document.execCommand("copy");
+  } catch (error) {
+    copied = !1;
+  }
+  document.body.removeChild(input);
+  return copied;
+}
+
+function findCustomSelectItemByValue(listEl, value) {
+  if (!listEl) return null;
+  const target = String(value || "");
+  return Array.from(listEl.querySelectorAll("li")).find((item) => item.dataset.value === target) || null;
+}
+
+function syncModeSelectButton() {
+  const select = document.getElementById("mode-select");
+  const button = document.getElementById("mode-select-button");
+  const list = document.getElementById("mode-select-list");
+  if (!select || !button || !list) return;
+  const item = findCustomSelectItemByValue(list, select.value);
+  const label = button.querySelector(".custom-select-label");
+  if (label && item) {
+    label.textContent = item.childNodes[0].textContent.trim();
+  }
+  const sourcePill = item?.querySelector(".difficulty-pill");
+  const targetPill = button.querySelector(".difficulty-pill");
+  if (sourcePill) {
+    const clone = sourcePill.cloneNode(!0);
+    targetPill ? targetPill.replaceWith(clone) : button.appendChild(clone);
+  } else if (targetPill) {
+    targetPill.remove();
+  }
+}
+
+function syncGameModeSelectButton() {
+  const select = document.getElementById("game-mode-select");
+  const button = document.getElementById("game-mode-select-button");
+  const list = document.getElementById("game-mode-select-list");
+  if (!select || !button || !list) return;
+  const item = findCustomSelectItemByValue(list, select.value);
+  const label = button.querySelector(".custom-select-label");
+  if (label && item) {
+    label.textContent = item.childNodes[0].textContent.trim();
+  }
+  const sourcePill = item?.querySelector(".difficulty-pill");
+  const targetPill = button.querySelector(".difficulty-pill");
+  if (sourcePill) {
+    const clone = sourcePill.cloneNode(!0);
+    targetPill ? targetPill.replaceWith(clone) : button.appendChild(clone);
+  } else if (targetPill) {
+    targetPill.remove();
+  }
+}
+
+function setZoneModeSelection(mode) {
+  const select = document.getElementById("mode-select");
+  if (!select || !mode) return;
+  if (!Array.from(select.options).some((option) => option.value === mode)) return;
+  select.value = mode;
+  syncModeSelectButton();
+  select.dispatchEvent(new Event("change"));
+}
+
+function setGameModeSelection(gameMode) {
+  const select = document.getElementById("game-mode-select");
+  const list = document.getElementById("game-mode-select-list");
+  if (!select || !gameMode) return;
+  if (!Array.from(select.options).some((option) => option.value === gameMode)) return;
+
+  select.value = gameMode;
+  syncGameModeSelectButton();
+  isSessionRunning && endSession();
+  "lecture" !== gameMode &&
+    isLectureMode &&
+    ((isLectureMode = !1),
+      setLectureTooltipsEnabled(!1),
+      refreshLectureStreetSearchForCurrentMode(),
+      updateTargetPanelTitle(),
+      updateLayoutSessionState());
+  updateGameModeControls();
+  list && ((list.scrollTop = 0), list.classList.remove("visible"));
+  "lecture" === gameMode && requestAnimationFrame(() => startNewSession());
+}
+
+function setQuartierSelectionByName(quartierName) {
+  const select = document.getElementById("quartier-select");
+  const button = document.getElementById("quartier-select-button");
+  if (!select || !quartierName) return !1;
+  const targetKey = normalizeQuartierKey(quartierName);
+  const option = Array.from(select.options).find(
+    (entry) => normalizeQuartierKey(entry.value) === targetKey || normalizeQuartierKey(entry.textContent) === targetKey,
+  );
+  if (!option) return !1;
+  select.value = option.value;
+  if (button) {
+    const label = button.querySelector(".custom-select-label");
+    label && (label.textContent = option.value);
+  }
+  select.dispatchEvent(new Event("change"));
+  return !0;
+}
+
+function setGameConfigurationControlsLocked(locked) {
+  const elements = [
+    document.getElementById("mode-select"),
+    document.getElementById("mode-select-button"),
+    document.getElementById("quartier-select"),
+    document.getElementById("quartier-select-button"),
+    document.getElementById("game-mode-select"),
+    document.getElementById("game-mode-select-button"),
+  ];
+  elements.forEach((element) => {
+    if (!element) return;
+    element.disabled = !!locked;
+    element.setAttribute("aria-disabled", locked ? "true" : "false");
+  });
+  const lists = [
+    document.getElementById("mode-select-list"),
+    document.getElementById("quartier-select-list"),
+    document.getElementById("game-mode-select-list"),
+  ];
+  lists.forEach((list) => {
+    list && list.classList.remove("visible");
+  });
+}
+
+function updateFriendChallengeToggleUI() {
+  const button = document.getElementById("friends-challenge-toggle");
+  if (!button) return;
+  const isOn = !!activeFriendChallenge;
+  button.classList.toggle("is-on", isOn);
+  button.textContent = isOn ? "Défi amis ON" : "Défi amis OFF";
+  button.setAttribute("aria-pressed", isOn ? "true" : "false");
+}
+
 function getZoneMode() {
   return currentZoneMode;
 }
+
+function clearFriendChallengeMiniBoard() {
+  const slot = document.getElementById("friend-challenge-board-slot");
+  if (!slot) return;
+  slot.innerHTML = "";
+  slot.classList.add("hidden");
+}
+
+function renderFriendChallengeMiniBoard({ rows = [], infoMessage = "" } = {}) {
+  const slot = document.getElementById("friend-challenge-board-slot");
+  if (!slot) return;
+  if (!activeFriendChallenge) {
+    clearFriendChallengeMiniBoard();
+    return;
+  }
+
+  slot.innerHTML = "";
+  slot.classList.remove("hidden");
+
+  const title = document.createElement("p");
+  title.className = "friend-challenge-board-title";
+  title.textContent = "Mini leaderboard — Défi amis";
+  slot.appendChild(title);
+
+  const meta = document.createElement("p");
+  meta.className = "friend-challenge-board-meta";
+  meta.textContent =
+    `${ZONE_LABELS[activeFriendChallenge.mode] || activeFriendChallenge.mode} · ` +
+    `${GAME_LABELS[activeFriendChallenge.gameType] || activeFriendChallenge.gameType}`;
+  slot.appendChild(meta);
+
+  const actions = document.createElement("div");
+  actions.className = "friend-challenge-board-actions";
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "btn-secondary friend-challenge-copy-btn";
+  copyBtn.textContent = "Copier le lien";
+  copyBtn.addEventListener("click", async () => {
+    const copied = await copyTextToClipboard(buildFriendChallengeShareUrl(activeFriendChallenge));
+    showMessage(copied ? "Lien du défi copié." : "Impossible de copier le lien du défi.", copied ? "success" : "error");
+  });
+  actions.appendChild(copyBtn);
+  slot.appendChild(actions);
+
+  if (infoMessage) {
+    const note = document.createElement("p");
+    note.className = "friend-challenge-board-empty";
+    note.textContent = infoMessage;
+    slot.appendChild(note);
+    return;
+  }
+
+  if (!Array.isArray(rows) || rows.length < 1) {
+    const note = document.createElement("p");
+    note.className = "friend-challenge-board-empty";
+    note.textContent = "Aucun score enregistré pour ce défi pour l'instant.";
+    slot.appendChild(note);
+    return;
+  }
+
+  const table = document.createElement("table");
+  table.className = "leaderboard-table";
+  table.innerHTML = "<thead><tr><th>#</th><th>Joueur</th><th>Score</th><th>Temps</th></tr></thead>";
+  const tbody = document.createElement("tbody");
+  rows.forEach((row, index) => {
+    const tr = document.createElement("tr");
+    const rank = document.createElement("td");
+    rank.textContent = String(index + 1);
+    const player = document.createElement("td");
+    const avatar = row?.avatar || "👤";
+    const username = row?.username || "Anonyme";
+    const titleValue = getPlayerTitle(
+      row?.score || 0,
+      activeFriendChallenge.mode,
+      activeFriendChallenge.gameType,
+      row?.items_total || activeFriendChallenge.itemCount || 0,
+      row?.items_correct,
+    );
+    player.innerHTML = `<span class="leaderboard-avatar">${avatar}</span>${username}<br><small class="leaderboard-player-meta">${titleValue}</small>`;
+    const scoreCell = document.createElement("td");
+    if (activeFriendChallenge.gameType === "classique") {
+      const parsedScore = Number(row?.score);
+      scoreCell.textContent = Number.isFinite(parsedScore) ? parsedScore.toFixed(1) : "0.0";
+    } else {
+      const parsedCorrect = Number.parseInt(row?.items_correct, 10);
+      scoreCell.textContent = Number.isFinite(parsedCorrect) ? String(parsedCorrect) : "0";
+    }
+    const timeCell = document.createElement("td");
+    const parsedTime = Number(row?.time_sec);
+    timeCell.textContent = Number.isFinite(parsedTime) ? `${parsedTime.toFixed(1)} s` : "—";
+    tr.appendChild(rank);
+    tr.appendChild(player);
+    tr.appendChild(scoreCell);
+    tr.appendChild(timeCell);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  slot.appendChild(table);
+}
+
+async function loadFriendChallengeLeaderboard() {
+  if (!activeFriendChallenge) {
+    clearFriendChallengeMiniBoard();
+    return;
+  }
+  if (!currentUser || !currentUser.token) {
+    renderFriendChallengeMiniBoard({
+      infoMessage: "Connectez-vous puis terminez au moins une partie pour voir le mini leaderboard.",
+    });
+    return;
+  }
+  const challengeCode = activeFriendChallenge.code;
+  try {
+    const response = await fetch(`${API_URL}/api/friend-challenges/${encodeURIComponent(challengeCode)}/leaderboard`, {
+      headers: { Authorization: `Bearer ${currentUser.token}` },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!activeFriendChallenge || activeFriendChallenge.code !== challengeCode) {
+      return;
+    }
+    if (!response.ok) {
+      if (response.status === 403) {
+        renderFriendChallengeMiniBoard({
+          infoMessage: "Le mini leaderboard sera visible après ta première partie sur ce défi.",
+        });
+        return;
+      }
+      if (response.status === 401) {
+        renderFriendChallengeMiniBoard({
+          infoMessage: "Connectez-vous pour afficher le mini leaderboard du défi.",
+        });
+        return;
+      }
+      renderFriendChallengeMiniBoard({
+        infoMessage: payload?.error || "Mini leaderboard indisponible pour le moment.",
+      });
+      return;
+    }
+    renderFriendChallengeMiniBoard({ rows: Array.isArray(payload?.rows) ? payload.rows : [] });
+  } catch (error) {
+    console.error("Friend challenge leaderboard error:", error);
+    if (!activeFriendChallenge || activeFriendChallenge.code !== challengeCode) {
+      return;
+    }
+    renderFriendChallengeMiniBoard({
+      infoMessage: "Mini leaderboard indisponible (erreur réseau).",
+    });
+  }
+}
+
+function applyFriendChallengeConfigToUI(challenge) {
+  if (!challenge) return;
+  isApplyingFriendChallengeConfig = !0;
+  try {
+    setZoneModeSelection(challenge.mode);
+    setGameModeSelection(challenge.gameType);
+    pendingFriendChallengeQuartierName = null;
+    if (challenge.mode === "quartier" && challenge.quartierName) {
+      if (!setQuartierSelectionByName(challenge.quartierName)) {
+        pendingFriendChallengeQuartierName = challenge.quartierName;
+      }
+    }
+  } finally {
+    isApplyingFriendChallengeConfig = !1;
+    setGameConfigurationControlsLocked(!!activeFriendChallenge);
+  }
+}
+
+function deactivateFriendChallenge({ clearUrl = !0, silent = !1 } = {}) {
+  activeFriendChallenge = null;
+  pendingFriendChallengeQuartierName = null;
+  clearUrl && updateFriendChallengeCodeInUrl("");
+  updateFriendChallengeToggleUI();
+  setGameConfigurationControlsLocked(!1);
+  clearFriendChallengeMiniBoard();
+  !silent && showMessage("Défi amis désactivé.", "info");
+}
+
+async function activateFriendChallenge(challenge, { copyLink = !1, successMessage = "" } = {}) {
+  const normalized = normalizeFriendChallengePayload(challenge);
+  if (!normalized) {
+    showMessage("Impossible de charger ce défi amis.", "error");
+    return null;
+  }
+
+  activeFriendChallenge = normalized;
+  updateFriendChallengeCodeInUrl(normalized.code);
+  updateFriendChallengeToggleUI();
+  applyFriendChallengeConfigToUI(normalized);
+  await loadFriendChallengeLeaderboard();
+
+  if (copyLink) {
+    const copied = await copyTextToClipboard(buildFriendChallengeShareUrl(normalized));
+    showMessage(copied ? "Lien du défi copié dans le presse-papiers." : "Impossible de copier le lien du défi.", copied ? "success" : "error");
+  } else if (successMessage) {
+    showMessage(successMessage, "info");
+  }
+  return normalized;
+}
+
+async function fetchAndActivateFriendChallengeByCode(code, { showSuccessMessage = !1 } = {}) {
+  const challengeCode = String(code || "").trim().toUpperCase();
+  if (!/^[A-Z0-9]{10}$/.test(challengeCode)) {
+    showMessage("Code de défi invalide.", "error");
+    return null;
+  }
+  try {
+    const response = await fetch(`${API_URL}/api/friend-challenges/${encodeURIComponent(challengeCode)}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      showMessage(payload?.error || "Défi introuvable ou expiré.", "error");
+      return null;
+    }
+    return await activateFriendChallenge(payload, {
+      copyLink: !1,
+      successMessage: showSuccessMessage ? "Défi amis chargé." : "",
+    });
+  } catch (error) {
+    console.error("Friend challenge fetch error:", error);
+    showMessage("Impossible de charger le défi (erreur réseau).", "error");
+    return null;
+  }
+}
+
+async function createFriendChallengeFromCurrentSettings() {
+  if (isSessionRunning) {
+    showMessage("Arrêtez la session en cours avant de créer un défi amis.", "warning");
+    return null;
+  }
+  if (!currentUser || !currentUser.token) {
+    showMessage("Connectez-vous pour créer un défi amis.", "warning");
+    return null;
+  }
+
+  const zoneMode = getZoneMode();
+  const gameMode = getGameMode();
+  if (!FRIEND_CHALLENGE_ALLOWED_GAME_MODES.has(gameMode)) {
+    showMessage("Le défi amis est disponible en Classique, Marathon ou Chrono.", "warning");
+    return null;
+  }
+  if (!FRIEND_CHALLENGE_ALLOWED_ZONE_MODES.has(zoneMode)) {
+    showMessage("Cette zone n'est pas compatible avec le défi amis.", "warning");
+    return null;
+  }
+  const quartierName = zoneMode === "quartier" ? getSelectedQuartier() : null;
+  if (zoneMode === "quartier" && !quartierName) {
+    showMessage("Choisissez un quartier avant de créer un défi amis.", "warning");
+    return null;
+  }
+
+  try {
+    const response = await fetch(`${API_URL}/api/friend-challenges`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${currentUser.token}`,
+      },
+      body: JSON.stringify({
+        mode: zoneMode,
+        gameType: gameMode,
+        quartierName,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      showMessage(payload?.error || "Impossible de créer le défi amis.", "error");
+      return null;
+    }
+    return await activateFriendChallenge(payload, { copyLink: !0 });
+  } catch (error) {
+    console.error("Friend challenge create error:", error);
+    showMessage("Impossible de créer le défi amis (erreur réseau).", "error");
+    return null;
+  }
+}
+
+async function handleFriendChallengeToggleClick() {
+  const toggle = document.getElementById("friends-challenge-toggle");
+  if (!toggle) return;
+  if (isSessionRunning) {
+    showMessage("Arrêtez la session avant de modifier le mode Défi amis.", "warning");
+    return;
+  }
+  if (activeFriendChallenge) {
+    deactivateFriendChallenge({ clearUrl: !0, silent: !1 });
+    return;
+  }
+  toggle.disabled = !0;
+  try {
+    await createFriendChallengeFromCurrentSettings();
+  } finally {
+    toggle.disabled = !1;
+    updateFriendChallengeToggleUI();
+  }
+}
+
+async function initFriendChallengeModeFromUrl() {
+  if (friendChallengeInitPromise) {
+    return friendChallengeInitPromise;
+  }
+  const challengeCode = getFriendChallengeCodeFromUrl();
+  if (!challengeCode) {
+    deactivateFriendChallenge({ clearUrl: !1, silent: !0 });
+    return null;
+  }
+  friendChallengeInitPromise = fetchAndActivateFriendChallengeByCode(challengeCode, { showSuccessMessage: !0 })
+    .then((challenge) => {
+      if (!challenge) {
+        updateFriendChallengeCodeInUrl("");
+      }
+      return challenge;
+    })
+    .finally(() => {
+      friendChallengeInitPromise = null;
+    });
+  return friendChallengeInitPromise;
+}
+
+function getFriendChallengeStreetTargets() {
+  if (!activeFriendChallenge || !Array.isArray(activeFriendChallenge.targetNames)) return [];
+  const byName = new Map();
+  allStreetFeatures.forEach((feature) => {
+    const featureName = feature?.properties?.name;
+    const key = normalizeChallengeNameKey(featureName);
+    if (key && !byName.has(key)) {
+      byName.set(key, feature);
+    }
+  });
+  return activeFriendChallenge.targetNames
+    .map((name) => byName.get(normalizeChallengeNameKey(name)))
+    .filter((feature) => !!feature);
+}
+
+function getFriendChallengeMonumentTargets() {
+  if (!activeFriendChallenge || !Array.isArray(activeFriendChallenge.targetNames)) return [];
+  const byName = new Map();
+  allMonuments.forEach((feature) => {
+    const featureName = feature?.properties?.name;
+    const key = normalizeChallengeNameKey(featureName);
+    if (key && !byName.has(key)) {
+      byName.set(key, feature);
+    }
+  });
+  return activeFriendChallenge.targetNames
+    .map((name) => byName.get(normalizeChallengeNameKey(name)))
+    .filter((feature) => !!feature);
+}
+
+function getFriendChallengeQuartierTargets() {
+  if (!activeFriendChallenge || !Array.isArray(activeFriendChallenge.targetNames)) return [];
+  const byKey = new Map();
+  allQuartierFeatures.forEach((feature) => {
+    const key = normalizeQuartierKey(getQuartierTargetName(feature));
+    if (key && !byKey.has(key)) {
+      byKey.set(key, feature);
+    }
+  });
+  return activeFriendChallenge.targetNames
+    .map((name) => byKey.get(normalizeQuartierKey(name)))
+    .filter((feature) => !!feature);
+}
+
 function updateModeDifficultyPill() {
   const e = document.getElementById("mode-select"),
     t = document.getElementById("mode-difficulty-pill");
@@ -1367,7 +1980,8 @@ function initUI() {
     u = document.getElementById("register-btn"),
     d = document.getElementById("logout-btn"),
     c = document.getElementById("auth-username"),
-    m = document.getElementById("auth-password");
+    m = document.getElementById("auth-password"),
+    friendChallengeToggleBtn = document.getElementById("friends-challenge-toggle");
   (t && (currentZoneMode = t.value), updateModeDifficultyPill());
   const p = document.getElementById("mode-select-button"),
     g = document.getElementById("mode-select-list"),
@@ -1380,6 +1994,15 @@ function initUI() {
       g.querySelectorAll("li").forEach((e) => {
         e.addEventListener("click", () => {
           const r = e.dataset.value;
+          if (
+            activeFriendChallenge &&
+            !isApplyingFriendChallengeConfig &&
+            r !== activeFriendChallenge.mode
+          ) {
+            showMessage("Les paramètres sont verrouillés pour ce défi amis.", "warning");
+            g.classList.remove("visible");
+            return;
+          }
           h && (h.textContent = e.childNodes[0].textContent.trim());
           const a = e.querySelector(".difficulty-pill"),
             n = p.querySelector(".difficulty-pill");
@@ -1404,6 +2027,15 @@ function initUI() {
       v.querySelectorAll("li").forEach((e) => {
         e.addEventListener("click", () => {
           const t = e.dataset.value;
+          if (
+            activeFriendChallenge &&
+            !isApplyingFriendChallengeConfig &&
+            t !== activeFriendChallenge.gameType
+          ) {
+            showMessage("Les paramètres sont verrouillés pour ce défi amis.", "warning");
+            v.classList.remove("visible");
+            return;
+          }
           f && (f.textContent = e.childNodes[0].textContent.trim());
           const r = e.querySelector(".difficulty-pill");
           if (r) {
@@ -1499,7 +2131,14 @@ function initUI() {
       isSessionRunning && togglePause();
     }));
   const M = document.getElementById("daily-mode-btn");
-  (M && M.addEventListener("click", handleDailyModeClick),
+  (friendChallengeToggleBtn &&
+    (updateFriendChallengeToggleUI(),
+      friendChallengeToggleBtn.addEventListener("click", () => {
+        handleFriendChallengeToggleClick();
+      })),
+    setGameConfigurationControlsLocked(!!activeFriendChallenge),
+    loadFriendChallengeLeaderboard(),
+    M && M.addEventListener("click", handleDailyModeClick),
     n &&
     n.addEventListener("click", () => {
       const applyMarathonSkipPenalty = () => {
@@ -1573,6 +2212,16 @@ function initUI() {
     }),
     t &&
     t.addEventListener("change", () => {
+      if (
+        activeFriendChallenge &&
+        !isApplyingFriendChallengeConfig &&
+        t.value !== activeFriendChallenge.mode
+      ) {
+        t.value = activeFriendChallenge.mode;
+        syncModeSelectButton();
+        showMessage("Les paramètres sont verrouillés pour ce défi amis.", "warning");
+        return;
+      }
       currentZoneMode = t.value;
       const e = currentZoneMode;
       (updateTargetPanelTitle(),
@@ -1604,6 +2253,16 @@ function initUI() {
     }),
     a &&
     a.addEventListener("change", () => {
+      if (
+        activeFriendChallenge &&
+        activeFriendChallenge.mode === "quartier" &&
+        !isApplyingFriendChallengeConfig &&
+        normalizeQuartierKey(a.value) !== normalizeQuartierKey(activeFriendChallenge.quartierName)
+      ) {
+        setQuartierSelectionByName(activeFriendChallenge.quartierName);
+        showMessage("Les paramètres sont verrouillés pour ce défi amis.", "warning");
+        return;
+      }
       ("quartier" === getZoneMode() && a.value
         ? highlightQuartier(a.value)
         : clearQuartierOverlay(),
@@ -1726,6 +2385,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   (setMapStatus("Chargement", "loading"),
     initMap(),
     initUI(),
+    initFriendChallengeModeFromUrl(),
     startTimersLoop(),
     loadStreets(),
     loadQuartiers(),
@@ -1983,6 +2643,10 @@ function populateQuartiers() {
       nativeSelect && nativeSelect.dispatchEvent(new Event("change"));
     },
   });
+  if (pendingFriendChallengeQuartierName) {
+    setQuartierSelectionByName(pendingFriendChallengeQuartierName) &&
+      (pendingFriendChallengeQuartierName = null);
+  }
 }
 function scrollSidebarToTargetPanel() {
   if (window.innerWidth >= 900) return;
@@ -2053,9 +2717,25 @@ function exitLectureModeToMenu() {
 function startNewSession() {
   document.body.classList.remove("session-ended");
   const e = document.getElementById("quartier-select"),
-    t = getZoneMode(),
-    r = getGameMode(),
     a = document.getElementById("street-info");
+  let t = getZoneMode(),
+    r = getGameMode();
+  if (activeFriendChallenge) {
+    if (
+      t !== activeFriendChallenge.mode ||
+      r !== activeFriendChallenge.gameType ||
+      ("quartier" === activeFriendChallenge.mode &&
+        normalizeQuartierKey(getSelectedQuartier()) !== normalizeQuartierKey(activeFriendChallenge.quartierName))
+    ) {
+      applyFriendChallengeConfigToUI(activeFriendChallenge);
+      t = getZoneMode();
+      r = getGameMode();
+    }
+    if ("quartier" === activeFriendChallenge.mode && activeFriendChallenge.quartierName) {
+      setQuartierSelectionByName(activeFriendChallenge.quartierName) ||
+        (pendingFriendChallengeQuartierName = activeFriendChallenge.quartierName);
+    }
+  }
   (a && ((a.textContent = ""), (a.style.display = "none")),
     clearHighlight(),
     (activeSessionId = generateSessionId()),
@@ -2139,21 +2819,25 @@ function startNewSession() {
     if (
       (setZoneLayersVisibility(t),
         clearQuartierOverlay(),
-        "marathon" === r)
-    )
+        activeFriendChallenge)
+    ) {
+      sessionMonuments = getFriendChallengeMonumentTargets();
+    } else if ("marathon" === r || "chrono" === r) {
       sessionMonuments = sampleWithoutReplacement(
         allMonuments,
         allMonuments.length,
       );
-    else if ("chrono" === r)
-      sessionMonuments = sampleWithoutReplacement(
-        allMonuments,
-        allMonuments.length,
-      );
-    else {
+    } else {
       const e = Math.min(SESSION_SIZE, allMonuments.length);
       sessionMonuments = sampleWithoutReplacement(allMonuments, e);
     }
+    if (!sessionMonuments.length)
+      return void showMessage(
+        activeFriendChallenge
+          ? "Impossible de démarrer ce défi amis (monuments introuvables)."
+          : "Aucun monument disponible pour cette session.",
+        "error",
+      );
     ((currentMonumentIndex = 0),
       (currentMonumentTarget = null),
       (currentTarget = null),
@@ -2185,12 +2869,21 @@ function startNewSession() {
         "error",
       );
 
-    if ("marathon" === r || "chrono" === r) {
+    if (activeFriendChallenge) {
+      sessionQuartiers = getFriendChallengeQuartierTargets();
+    } else if ("marathon" === r || "chrono" === r) {
       sessionQuartiers = sampleWithoutReplacement(allQuartierFeatures, allQuartierFeatures.length);
     } else {
       const e = Math.min(SESSION_SIZE, allQuartierFeatures.length);
       sessionQuartiers = sampleWithoutReplacement(allQuartierFeatures, e);
     }
+    if (!sessionQuartiers.length)
+      return void showMessage(
+        activeFriendChallenge
+          ? "Impossible de démarrer ce défi amis (quartiers introuvables)."
+          : "Aucun quartier disponible pour cette session.",
+        "error",
+      );
 
     ((currentQuartierIndex = 0),
       (currentQuartierTarget = null),
@@ -2231,13 +2924,21 @@ function startNewSession() {
       "Aucune rue nommée disponible pour cette zone.",
       "error",
     );
-  if ("marathon" === r) sessionStreets = sampleWithoutReplacement(i, i.length);
-  else if ("chrono" === r)
+  if (activeFriendChallenge) {
+    sessionStreets = getFriendChallengeStreetTargets();
+  } else if ("marathon" === r || "chrono" === r) {
     sessionStreets = sampleWithoutReplacement(i, i.length);
-  else {
+  } else {
     const e = Math.min(SESSION_SIZE, i.length);
     sessionStreets = sampleWithoutReplacement(i, e);
   }
+  if (!sessionStreets.length)
+    return void showMessage(
+      activeFriendChallenge
+        ? "Impossible de démarrer ce défi amis (rues introuvables)."
+        : "Aucune rue disponible pour cette session.",
+      "error",
+    );
   ((currentIndex = 0),
     "quartier" === t && e && e.value
       ? highlightQuartier(e.value)
@@ -2276,7 +2977,9 @@ function setNewTarget() {
   if ("monuments" === getZoneMode()) {
     if (currentMonumentIndex >= sessionMonuments.length) {
       if ("chrono" !== e) return void endSession();
-      (shuffle(sessionMonuments), (currentMonumentIndex = 0));
+      activeFriendChallenge
+        ? (currentMonumentIndex = 0)
+        : (shuffle(sessionMonuments), (currentMonumentIndex = 0));
     }
     ((currentTarget = null),
       (currentMonumentTarget = sessionMonuments[currentMonumentIndex]),
@@ -2296,7 +2999,9 @@ function setNewTarget() {
   if ("quartiers-ville" === getZoneMode()) {
     if (currentQuartierIndex >= sessionQuartiers.length) {
       if ("chrono" !== e) return void endSession();
-      (shuffle(sessionQuartiers), (currentQuartierIndex = 0));
+      activeFriendChallenge
+        ? (currentQuartierIndex = 0)
+        : (shuffle(sessionQuartiers), (currentQuartierIndex = 0));
     }
     ((currentTarget = null),
       (currentMonumentTarget = null),
@@ -2316,7 +3021,9 @@ function setNewTarget() {
   }
   if (currentIndex >= sessionStreets.length) {
     if ("chrono" !== e) return void endSession();
-    (shuffle(sessionStreets), (currentIndex = 0));
+    activeFriendChallenge
+      ? (currentIndex = 0)
+      : (shuffle(sessionStreets), (currentIndex = 0));
   }
   ((currentMonumentTarget = null),
     (currentQuartierTarget = null),
@@ -3214,20 +3921,23 @@ function endSession() {
     showMessage("Session terminée.", "info"));
   const T = document.getElementById("target-street");
   (T && ((T.textContent = "—"), requestAnimationFrame(fitTargetStreetText)),
-    refreshLectureStreetSearchForCurrentMode(),
-    currentUser &&
+    refreshLectureStreetSearchForCurrentMode());
+  const sessionScorePayload = {
+    zoneMode: o,
+    quartierName: u,
+    gameMode: l,
+    sessionId: activeSessionId || generateSessionId(),
+    score: uScore,
+    percentCorrect: s,
+    totalTimeSec: t,
+    itemsTotal: poolSize,
+    itemsCorrect: n,
+  };
+  (currentUser &&
     currentUser.token &&
-    sendScoreToServer({
-      zoneMode: o,
-      quartierName: u,
-      gameMode: l,
-      sessionId: activeSessionId || generateSessionId(),
-      score: uScore,
-      percentCorrect: s,
-      totalTimeSec: t,
-      itemsTotal: poolSize,
-      itemsCorrect: n,
-    }),
+    (activeFriendChallenge
+      ? sendFriendChallengeScoreToServer(sessionScorePayload)
+      : sendScoreToServer(sessionScorePayload)),
     loadLeaderboard(o, u, l));
 }
 function updateScoreUI() {
@@ -3313,6 +4023,7 @@ function updateUserUI() {
     renderUserSticker,
     loadProfile,
   });
+  loadFriendChallengeLeaderboard();
 }
 (infoEl && (infoEl.textContent = ""),
   (function () {
@@ -3410,7 +4121,61 @@ function sendScoreToServer(e) {
     loadAllLeaderboards,
   });
 }
+
+function sendFriendChallengeScoreToServer(e) {
+  if (
+    isDailyMode ||
+    !activeFriendChallenge ||
+    !currentUser ||
+    !currentUser.token
+  ) {
+    return;
+  }
+
+  try {
+    fetch(`${API_URL}/api/friend-challenges/${encodeURIComponent(activeFriendChallenge.code)}/score`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${currentUser.token}`,
+      },
+      body: JSON.stringify({
+        score: e.score,
+        itemsCorrect: e.itemsCorrect,
+        itemsTotal: e.itemsTotal,
+        timeSec: e.totalTimeSec,
+      }),
+    })
+      .then((response) =>
+        response
+          .json()
+          .catch(() => ({}))
+          .then((payload) => ({ ok: response.ok, status: response.status, payload })),
+      )
+      .then(({ ok, status, payload }) => {
+        if (!ok) {
+          if (status === 401) {
+            showMessage("Connectez-vous pour enregistrer votre score sur ce défi.", "warning");
+          } else {
+            console.warn("Friend challenge score rejected:", payload);
+          }
+          return;
+        }
+        loadFriendChallengeLeaderboard();
+      })
+      .catch((error) => {
+        console.error("Erreur envoi score défi amis :", error);
+      });
+  } catch (error) {
+    console.error("Erreur envoi score défi amis (synchrone) :", error);
+  }
+}
+
 async function handleDailyModeClick() {
+  if (activeFriendChallenge) {
+    showMessage("Désactivez le défi amis avant de lancer un Daily.", "warning");
+    return;
+  }
   if (currentUser && currentUser.token)
     try {
       const e = await fetch(API_URL + "/api/daily", {

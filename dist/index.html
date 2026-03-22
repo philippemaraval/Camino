@@ -219,6 +219,12 @@
               <option value="daily">Daily (7 essais)</option>
             </select>
           </div>
+
+          <div class="params-actions">
+            <button id="friends-challenge-toggle" type="button" class="btn-secondary btn-emphasis--compact friends-challenge-toggle">
+              Défi amis OFF
+            </button>
+          </div>
         </section>
 
         <!-- Boutons de session (séparés pour rester visibles en mode mobile session) -->
@@ -332,7 +338,7 @@
         <section class="panel leaderboard-panel">
           <details open>
             <summary class="panel-title">Leaderboard</summary>
-
+            <div id="friend-challenge-board-slot" class="friend-challenge-board-slot hidden"></div>
             <div id="leaderboard" class="leaderboard"></div>
           </details>
         </section>

@@ -3685,6 +3685,9 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   function normalizeSearchText(e) {
     return normalizeName(e).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   }
+  function normalizeChallengeNameKey(e) {
+    return normalizeSearchText(e).replace(/[’`´]/g, "'").replace(/[-‐‑‒–—]/g, "-").replace(/\s+/g, " ").trim();
+  }
   function toPushServerKeyUint8Array(base64String) {
     const normalized = String(base64String || "").trim();
     const padding = "=".repeat((4 - normalized.length % 4) % 4);
@@ -4151,6 +4154,20 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   var hasAnsweredCurrentItem = false;
   var lectureStreetSearchIndex = [];
   var lectureStreetSearchMatches = [];
+  var isApplyingFriendChallengeConfig = false;
+  var activeFriendChallenge = null;
+  var friendChallengeInitPromise = null;
+  var pendingFriendChallengeQuartierName = null;
+  var FRIEND_CHALLENGE_QUERY_PARAM = "defi";
+  var FRIEND_CHALLENGE_ALLOWED_GAME_MODES = /* @__PURE__ */ new Set(["classique", "marathon", "chrono"]);
+  var FRIEND_CHALLENGE_ALLOWED_ZONE_MODES = /* @__PURE__ */ new Set([
+    "ville",
+    "quartier",
+    "quartiers-ville",
+    "rues-principales",
+    "rues-celebres",
+    "monuments"
+  ]);
   function getSessionScoreValue(e = getGameMode()) {
     return "classique" === e ? weightedScore : correctCount;
   }
@@ -4308,8 +4325,535 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     }
     return `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
   }
+  function normalizeFriendChallengePayload(payload) {
+    const code = String((payload == null ? void 0 : payload.code) || "").trim().toUpperCase();
+    const mode = String((payload == null ? void 0 : payload.mode) || "").trim();
+    const gameType = String((payload == null ? void 0 : payload.gameType) || "").trim();
+    const targetType = String((payload == null ? void 0 : payload.targetType) || "").trim() || "street";
+    const targetNames = Array.isArray(payload == null ? void 0 : payload.targetNames) ? payload.targetNames.map((value) => String(value || "").trim()).filter(Boolean) : [];
+    if (!/^[A-Z0-9]{10}$/.test(code) || !FRIEND_CHALLENGE_ALLOWED_ZONE_MODES.has(mode) || !FRIEND_CHALLENGE_ALLOWED_GAME_MODES.has(gameType) || targetNames.length < 1) {
+      return null;
+    }
+    return {
+      code,
+      mode,
+      gameType,
+      quartierName: typeof (payload == null ? void 0 : payload.quartierName) === "string" ? payload.quartierName.trim() : null,
+      targetType,
+      targetNames,
+      itemCount: Number.parseInt(payload == null ? void 0 : payload.itemCount, 10) || targetNames.length,
+      sharePath: typeof (payload == null ? void 0 : payload.sharePath) === "string" ? payload.sharePath : "",
+      createdBy: (payload == null ? void 0 : payload.createdBy) || null
+    };
+  }
+  function getFriendChallengeCodeFromUrl() {
+    try {
+      const url = new URL(window.location.href);
+      return String(url.searchParams.get(FRIEND_CHALLENGE_QUERY_PARAM) || "").trim().toUpperCase();
+    } catch (error) {
+      return "";
+    }
+  }
+  function updateFriendChallengeCodeInUrl(code) {
+    try {
+      const url = new URL(window.location.href);
+      if (code) {
+        url.searchParams.set(FRIEND_CHALLENGE_QUERY_PARAM, code);
+      } else {
+        url.searchParams.delete(FRIEND_CHALLENGE_QUERY_PARAM);
+      }
+      const next = `${url.pathname}${url.search}${url.hash}`;
+      window.history.replaceState({}, "", next);
+    } catch (error) {
+      console.warn("Friend challenge URL sync failed:", error);
+    }
+  }
+  function buildFriendChallengeShareUrl(challenge) {
+    if (!challenge) {
+      return "";
+    }
+    if (challenge.sharePath) {
+      try {
+        return new URL(challenge.sharePath, window.location.origin).toString();
+      } catch (error) {
+      }
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set(FRIEND_CHALLENGE_QUERY_PARAM, challenge.code);
+    return url.toString();
+  }
+  async function copyTextToClipboard(text) {
+    const value = String(text || "").trim();
+    if (!value) {
+      return false;
+    }
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      try {
+        await navigator.clipboard.writeText(value);
+        return true;
+      } catch (error) {
+      }
+    }
+    const input = document.createElement("textarea");
+    input.value = value;
+    input.setAttribute("readonly", "readonly");
+    input.style.position = "fixed";
+    input.style.opacity = "0";
+    input.style.pointerEvents = "none";
+    document.body.appendChild(input);
+    input.select();
+    let copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch (error) {
+      copied = false;
+    }
+    document.body.removeChild(input);
+    return copied;
+  }
+  function findCustomSelectItemByValue(listEl, value) {
+    if (!listEl) return null;
+    const target = String(value || "");
+    return Array.from(listEl.querySelectorAll("li")).find((item) => item.dataset.value === target) || null;
+  }
+  function syncModeSelectButton() {
+    const select = document.getElementById("mode-select");
+    const button = document.getElementById("mode-select-button");
+    const list = document.getElementById("mode-select-list");
+    if (!select || !button || !list) return;
+    const item = findCustomSelectItemByValue(list, select.value);
+    const label = button.querySelector(".custom-select-label");
+    if (label && item) {
+      label.textContent = item.childNodes[0].textContent.trim();
+    }
+    const sourcePill = item == null ? void 0 : item.querySelector(".difficulty-pill");
+    const targetPill = button.querySelector(".difficulty-pill");
+    if (sourcePill) {
+      const clone = sourcePill.cloneNode(true);
+      targetPill ? targetPill.replaceWith(clone) : button.appendChild(clone);
+    } else if (targetPill) {
+      targetPill.remove();
+    }
+  }
+  function syncGameModeSelectButton() {
+    const select = document.getElementById("game-mode-select");
+    const button = document.getElementById("game-mode-select-button");
+    const list = document.getElementById("game-mode-select-list");
+    if (!select || !button || !list) return;
+    const item = findCustomSelectItemByValue(list, select.value);
+    const label = button.querySelector(".custom-select-label");
+    if (label && item) {
+      label.textContent = item.childNodes[0].textContent.trim();
+    }
+    const sourcePill = item == null ? void 0 : item.querySelector(".difficulty-pill");
+    const targetPill = button.querySelector(".difficulty-pill");
+    if (sourcePill) {
+      const clone = sourcePill.cloneNode(true);
+      targetPill ? targetPill.replaceWith(clone) : button.appendChild(clone);
+    } else if (targetPill) {
+      targetPill.remove();
+    }
+  }
+  function setZoneModeSelection(mode) {
+    const select = document.getElementById("mode-select");
+    if (!select || !mode) return;
+    if (!Array.from(select.options).some((option) => option.value === mode)) return;
+    select.value = mode;
+    syncModeSelectButton();
+    select.dispatchEvent(new Event("change"));
+  }
+  function setGameModeSelection(gameMode) {
+    const select = document.getElementById("game-mode-select");
+    const list = document.getElementById("game-mode-select-list");
+    if (!select || !gameMode) return;
+    if (!Array.from(select.options).some((option) => option.value === gameMode)) return;
+    select.value = gameMode;
+    syncGameModeSelectButton();
+    isSessionRunning && endSession();
+    "lecture" !== gameMode && isLectureMode && (isLectureMode = false, setLectureTooltipsEnabled(false), refreshLectureStreetSearchForCurrentMode(), updateTargetPanelTitle(), updateLayoutSessionState());
+    updateGameModeControls();
+    list && (list.scrollTop = 0, list.classList.remove("visible"));
+    "lecture" === gameMode && requestAnimationFrame(() => startNewSession());
+  }
+  function setQuartierSelectionByName(quartierName) {
+    const select = document.getElementById("quartier-select");
+    const button = document.getElementById("quartier-select-button");
+    if (!select || !quartierName) return false;
+    const targetKey = normalizeQuartierKey(quartierName);
+    const option = Array.from(select.options).find(
+      (entry) => normalizeQuartierKey(entry.value) === targetKey || normalizeQuartierKey(entry.textContent) === targetKey
+    );
+    if (!option) return false;
+    select.value = option.value;
+    if (button) {
+      const label = button.querySelector(".custom-select-label");
+      label && (label.textContent = option.value);
+    }
+    select.dispatchEvent(new Event("change"));
+    return true;
+  }
+  function setGameConfigurationControlsLocked(locked) {
+    const elements = [
+      document.getElementById("mode-select"),
+      document.getElementById("mode-select-button"),
+      document.getElementById("quartier-select"),
+      document.getElementById("quartier-select-button"),
+      document.getElementById("game-mode-select"),
+      document.getElementById("game-mode-select-button")
+    ];
+    elements.forEach((element) => {
+      if (!element) return;
+      element.disabled = !!locked;
+      element.setAttribute("aria-disabled", locked ? "true" : "false");
+    });
+    const lists = [
+      document.getElementById("mode-select-list"),
+      document.getElementById("quartier-select-list"),
+      document.getElementById("game-mode-select-list")
+    ];
+    lists.forEach((list) => {
+      list && list.classList.remove("visible");
+    });
+  }
+  function updateFriendChallengeToggleUI() {
+    const button = document.getElementById("friends-challenge-toggle");
+    if (!button) return;
+    const isOn = !!activeFriendChallenge;
+    button.classList.toggle("is-on", isOn);
+    button.textContent = isOn ? "D\xE9fi amis ON" : "D\xE9fi amis OFF";
+    button.setAttribute("aria-pressed", isOn ? "true" : "false");
+  }
   function getZoneMode() {
     return currentZoneMode;
+  }
+  function clearFriendChallengeMiniBoard() {
+    const slot = document.getElementById("friend-challenge-board-slot");
+    if (!slot) return;
+    slot.innerHTML = "";
+    slot.classList.add("hidden");
+  }
+  function renderFriendChallengeMiniBoard({ rows = [], infoMessage = "" } = {}) {
+    const slot = document.getElementById("friend-challenge-board-slot");
+    if (!slot) return;
+    if (!activeFriendChallenge) {
+      clearFriendChallengeMiniBoard();
+      return;
+    }
+    slot.innerHTML = "";
+    slot.classList.remove("hidden");
+    const title = document.createElement("p");
+    title.className = "friend-challenge-board-title";
+    title.textContent = "Mini leaderboard \u2014 D\xE9fi amis";
+    slot.appendChild(title);
+    const meta = document.createElement("p");
+    meta.className = "friend-challenge-board-meta";
+    meta.textContent = `${ZONE_LABELS[activeFriendChallenge.mode] || activeFriendChallenge.mode} \xB7 ${GAME_LABELS[activeFriendChallenge.gameType] || activeFriendChallenge.gameType}`;
+    slot.appendChild(meta);
+    const actions = document.createElement("div");
+    actions.className = "friend-challenge-board-actions";
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "btn-secondary friend-challenge-copy-btn";
+    copyBtn.textContent = "Copier le lien";
+    copyBtn.addEventListener("click", async () => {
+      const copied = await copyTextToClipboard(buildFriendChallengeShareUrl(activeFriendChallenge));
+      showMessage(copied ? "Lien du d\xE9fi copi\xE9." : "Impossible de copier le lien du d\xE9fi.", copied ? "success" : "error");
+    });
+    actions.appendChild(copyBtn);
+    slot.appendChild(actions);
+    if (infoMessage) {
+      const note = document.createElement("p");
+      note.className = "friend-challenge-board-empty";
+      note.textContent = infoMessage;
+      slot.appendChild(note);
+      return;
+    }
+    if (!Array.isArray(rows) || rows.length < 1) {
+      const note = document.createElement("p");
+      note.className = "friend-challenge-board-empty";
+      note.textContent = "Aucun score enregistr\xE9 pour ce d\xE9fi pour l'instant.";
+      slot.appendChild(note);
+      return;
+    }
+    const table = document.createElement("table");
+    table.className = "leaderboard-table";
+    table.innerHTML = "<thead><tr><th>#</th><th>Joueur</th><th>Score</th><th>Temps</th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    rows.forEach((row, index) => {
+      const tr = document.createElement("tr");
+      const rank = document.createElement("td");
+      rank.textContent = String(index + 1);
+      const player = document.createElement("td");
+      const avatar = (row == null ? void 0 : row.avatar) || "\u{1F464}";
+      const username = (row == null ? void 0 : row.username) || "Anonyme";
+      const titleValue = getPlayerTitle(
+        (row == null ? void 0 : row.score) || 0,
+        activeFriendChallenge.mode,
+        activeFriendChallenge.gameType,
+        (row == null ? void 0 : row.items_total) || activeFriendChallenge.itemCount || 0,
+        row == null ? void 0 : row.items_correct
+      );
+      player.innerHTML = `<span class="leaderboard-avatar">${avatar}</span>${username}<br><small class="leaderboard-player-meta">${titleValue}</small>`;
+      const scoreCell = document.createElement("td");
+      if (activeFriendChallenge.gameType === "classique") {
+        const parsedScore = Number(row == null ? void 0 : row.score);
+        scoreCell.textContent = Number.isFinite(parsedScore) ? parsedScore.toFixed(1) : "0.0";
+      } else {
+        const parsedCorrect = Number.parseInt(row == null ? void 0 : row.items_correct, 10);
+        scoreCell.textContent = Number.isFinite(parsedCorrect) ? String(parsedCorrect) : "0";
+      }
+      const timeCell = document.createElement("td");
+      const parsedTime = Number(row == null ? void 0 : row.time_sec);
+      timeCell.textContent = Number.isFinite(parsedTime) ? `${parsedTime.toFixed(1)} s` : "\u2014";
+      tr.appendChild(rank);
+      tr.appendChild(player);
+      tr.appendChild(scoreCell);
+      tr.appendChild(timeCell);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    slot.appendChild(table);
+  }
+  async function loadFriendChallengeLeaderboard() {
+    if (!activeFriendChallenge) {
+      clearFriendChallengeMiniBoard();
+      return;
+    }
+    if (!currentUser || !currentUser.token) {
+      renderFriendChallengeMiniBoard({
+        infoMessage: "Connectez-vous puis terminez au moins une partie pour voir le mini leaderboard."
+      });
+      return;
+    }
+    const challengeCode = activeFriendChallenge.code;
+    try {
+      const response = await fetch(`${API_URL}/api/friend-challenges/${encodeURIComponent(challengeCode)}/leaderboard`, {
+        headers: { Authorization: `Bearer ${currentUser.token}` }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!activeFriendChallenge || activeFriendChallenge.code !== challengeCode) {
+        return;
+      }
+      if (!response.ok) {
+        if (response.status === 403) {
+          renderFriendChallengeMiniBoard({
+            infoMessage: "Le mini leaderboard sera visible apr\xE8s ta premi\xE8re partie sur ce d\xE9fi."
+          });
+          return;
+        }
+        if (response.status === 401) {
+          renderFriendChallengeMiniBoard({
+            infoMessage: "Connectez-vous pour afficher le mini leaderboard du d\xE9fi."
+          });
+          return;
+        }
+        renderFriendChallengeMiniBoard({
+          infoMessage: (payload == null ? void 0 : payload.error) || "Mini leaderboard indisponible pour le moment."
+        });
+        return;
+      }
+      renderFriendChallengeMiniBoard({ rows: Array.isArray(payload == null ? void 0 : payload.rows) ? payload.rows : [] });
+    } catch (error) {
+      console.error("Friend challenge leaderboard error:", error);
+      if (!activeFriendChallenge || activeFriendChallenge.code !== challengeCode) {
+        return;
+      }
+      renderFriendChallengeMiniBoard({
+        infoMessage: "Mini leaderboard indisponible (erreur r\xE9seau)."
+      });
+    }
+  }
+  function applyFriendChallengeConfigToUI(challenge) {
+    if (!challenge) return;
+    isApplyingFriendChallengeConfig = true;
+    try {
+      setZoneModeSelection(challenge.mode);
+      setGameModeSelection(challenge.gameType);
+      pendingFriendChallengeQuartierName = null;
+      if (challenge.mode === "quartier" && challenge.quartierName) {
+        if (!setQuartierSelectionByName(challenge.quartierName)) {
+          pendingFriendChallengeQuartierName = challenge.quartierName;
+        }
+      }
+    } finally {
+      isApplyingFriendChallengeConfig = false;
+      setGameConfigurationControlsLocked(!!activeFriendChallenge);
+    }
+  }
+  function deactivateFriendChallenge({ clearUrl = true, silent = false } = {}) {
+    activeFriendChallenge = null;
+    pendingFriendChallengeQuartierName = null;
+    clearUrl && updateFriendChallengeCodeInUrl("");
+    updateFriendChallengeToggleUI();
+    setGameConfigurationControlsLocked(false);
+    clearFriendChallengeMiniBoard();
+    !silent && showMessage("D\xE9fi amis d\xE9sactiv\xE9.", "info");
+  }
+  async function activateFriendChallenge(challenge, { copyLink = false, successMessage = "" } = {}) {
+    const normalized = normalizeFriendChallengePayload(challenge);
+    if (!normalized) {
+      showMessage("Impossible de charger ce d\xE9fi amis.", "error");
+      return null;
+    }
+    activeFriendChallenge = normalized;
+    updateFriendChallengeCodeInUrl(normalized.code);
+    updateFriendChallengeToggleUI();
+    applyFriendChallengeConfigToUI(normalized);
+    await loadFriendChallengeLeaderboard();
+    if (copyLink) {
+      const copied = await copyTextToClipboard(buildFriendChallengeShareUrl(normalized));
+      showMessage(copied ? "Lien du d\xE9fi copi\xE9 dans le presse-papiers." : "Impossible de copier le lien du d\xE9fi.", copied ? "success" : "error");
+    } else if (successMessage) {
+      showMessage(successMessage, "info");
+    }
+    return normalized;
+  }
+  async function fetchAndActivateFriendChallengeByCode(code, { showSuccessMessage = false } = {}) {
+    const challengeCode = String(code || "").trim().toUpperCase();
+    if (!/^[A-Z0-9]{10}$/.test(challengeCode)) {
+      showMessage("Code de d\xE9fi invalide.", "error");
+      return null;
+    }
+    try {
+      const response = await fetch(`${API_URL}/api/friend-challenges/${encodeURIComponent(challengeCode)}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        showMessage((payload == null ? void 0 : payload.error) || "D\xE9fi introuvable ou expir\xE9.", "error");
+        return null;
+      }
+      return await activateFriendChallenge(payload, {
+        copyLink: false,
+        successMessage: showSuccessMessage ? "D\xE9fi amis charg\xE9." : ""
+      });
+    } catch (error) {
+      console.error("Friend challenge fetch error:", error);
+      showMessage("Impossible de charger le d\xE9fi (erreur r\xE9seau).", "error");
+      return null;
+    }
+  }
+  async function createFriendChallengeFromCurrentSettings() {
+    if (isSessionRunning) {
+      showMessage("Arr\xEAtez la session en cours avant de cr\xE9er un d\xE9fi amis.", "warning");
+      return null;
+    }
+    if (!currentUser || !currentUser.token) {
+      showMessage("Connectez-vous pour cr\xE9er un d\xE9fi amis.", "warning");
+      return null;
+    }
+    const zoneMode = getZoneMode();
+    const gameMode = getGameMode();
+    if (!FRIEND_CHALLENGE_ALLOWED_GAME_MODES.has(gameMode)) {
+      showMessage("Le d\xE9fi amis est disponible en Classique, Marathon ou Chrono.", "warning");
+      return null;
+    }
+    if (!FRIEND_CHALLENGE_ALLOWED_ZONE_MODES.has(zoneMode)) {
+      showMessage("Cette zone n'est pas compatible avec le d\xE9fi amis.", "warning");
+      return null;
+    }
+    const quartierName = zoneMode === "quartier" ? getSelectedQuartier() : null;
+    if (zoneMode === "quartier" && !quartierName) {
+      showMessage("Choisissez un quartier avant de cr\xE9er un d\xE9fi amis.", "warning");
+      return null;
+    }
+    try {
+      const response = await fetch(`${API_URL}/api/friend-challenges`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${currentUser.token}`
+        },
+        body: JSON.stringify({
+          mode: zoneMode,
+          gameType: gameMode,
+          quartierName
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        showMessage((payload == null ? void 0 : payload.error) || "Impossible de cr\xE9er le d\xE9fi amis.", "error");
+        return null;
+      }
+      return await activateFriendChallenge(payload, { copyLink: true });
+    } catch (error) {
+      console.error("Friend challenge create error:", error);
+      showMessage("Impossible de cr\xE9er le d\xE9fi amis (erreur r\xE9seau).", "error");
+      return null;
+    }
+  }
+  async function handleFriendChallengeToggleClick() {
+    const toggle = document.getElementById("friends-challenge-toggle");
+    if (!toggle) return;
+    if (isSessionRunning) {
+      showMessage("Arr\xEAtez la session avant de modifier le mode D\xE9fi amis.", "warning");
+      return;
+    }
+    if (activeFriendChallenge) {
+      deactivateFriendChallenge({ clearUrl: true, silent: false });
+      return;
+    }
+    toggle.disabled = true;
+    try {
+      await createFriendChallengeFromCurrentSettings();
+    } finally {
+      toggle.disabled = false;
+      updateFriendChallengeToggleUI();
+    }
+  }
+  async function initFriendChallengeModeFromUrl() {
+    if (friendChallengeInitPromise) {
+      return friendChallengeInitPromise;
+    }
+    const challengeCode = getFriendChallengeCodeFromUrl();
+    if (!challengeCode) {
+      deactivateFriendChallenge({ clearUrl: false, silent: true });
+      return null;
+    }
+    friendChallengeInitPromise = fetchAndActivateFriendChallengeByCode(challengeCode, { showSuccessMessage: true }).then((challenge) => {
+      if (!challenge) {
+        updateFriendChallengeCodeInUrl("");
+      }
+      return challenge;
+    }).finally(() => {
+      friendChallengeInitPromise = null;
+    });
+    return friendChallengeInitPromise;
+  }
+  function getFriendChallengeStreetTargets() {
+    if (!activeFriendChallenge || !Array.isArray(activeFriendChallenge.targetNames)) return [];
+    const byName = /* @__PURE__ */ new Map();
+    allStreetFeatures.forEach((feature) => {
+      var _a;
+      const featureName = (_a = feature == null ? void 0 : feature.properties) == null ? void 0 : _a.name;
+      const key = normalizeChallengeNameKey(featureName);
+      if (key && !byName.has(key)) {
+        byName.set(key, feature);
+      }
+    });
+    return activeFriendChallenge.targetNames.map((name) => byName.get(normalizeChallengeNameKey(name))).filter((feature) => !!feature);
+  }
+  function getFriendChallengeMonumentTargets() {
+    if (!activeFriendChallenge || !Array.isArray(activeFriendChallenge.targetNames)) return [];
+    const byName = /* @__PURE__ */ new Map();
+    allMonuments.forEach((feature) => {
+      var _a;
+      const featureName = (_a = feature == null ? void 0 : feature.properties) == null ? void 0 : _a.name;
+      const key = normalizeChallengeNameKey(featureName);
+      if (key && !byName.has(key)) {
+        byName.set(key, feature);
+      }
+    });
+    return activeFriendChallenge.targetNames.map((name) => byName.get(normalizeChallengeNameKey(name))).filter((feature) => !!feature);
+  }
+  function getFriendChallengeQuartierTargets() {
+    if (!activeFriendChallenge || !Array.isArray(activeFriendChallenge.targetNames)) return [];
+    const byKey = /* @__PURE__ */ new Map();
+    allQuartierFeatures.forEach((feature) => {
+      const key = normalizeQuartierKey(getQuartierTargetName(feature));
+      if (key && !byKey.has(key)) {
+        byKey.set(key, feature);
+      }
+    });
+    return activeFriendChallenge.targetNames.map((name) => byKey.get(normalizeQuartierKey(name))).filter((feature) => !!feature);
   }
   function updateModeDifficultyPill() {
     const e = document.getElementById("mode-select"), t = document.getElementById("mode-difficulty-pill");
@@ -4532,7 +5076,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   }
   function initUI() {
     IS_TOUCH_DEVICE && document.body.classList.add("touch-mode"), initMobilePullToRefresh();
-    const e = document.getElementById("restart-btn"), t = document.getElementById("mode-select"), r = document.getElementById("quartier-block"), a = document.getElementById("quartier-select"), n = document.getElementById("skip-btn"), s = document.getElementById("pause-btn"), i = document.getElementById("quartier-select-button"), l = document.getElementById("quartier-select-list"), o = (i && i.querySelector(".custom-select-label"), document.getElementById("login-btn")), u = document.getElementById("register-btn"), d = document.getElementById("logout-btn"), c = document.getElementById("auth-username"), m = document.getElementById("auth-password");
+    const e = document.getElementById("restart-btn"), t = document.getElementById("mode-select"), r = document.getElementById("quartier-block"), a = document.getElementById("quartier-select"), n = document.getElementById("skip-btn"), s = document.getElementById("pause-btn"), i = document.getElementById("quartier-select-button"), l = document.getElementById("quartier-select-list"), o = (i && i.querySelector(".custom-select-label"), document.getElementById("login-btn")), u = document.getElementById("register-btn"), d = document.getElementById("logout-btn"), c = document.getElementById("auth-username"), m = document.getElementById("auth-password"), friendChallengeToggleBtn = document.getElementById("friends-challenge-toggle");
     t && (currentZoneMode = t.value), updateModeDifficultyPill();
     const p = document.getElementById("mode-select-button"), g = document.getElementById("mode-select-list"), h = p ? p.querySelector(".custom-select-label") : null;
     p && g && (p.addEventListener("click", (e2) => {
@@ -4540,6 +5084,11 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     }), g.querySelectorAll("li").forEach((e2) => {
       e2.addEventListener("click", () => {
         const r2 = e2.dataset.value;
+        if (activeFriendChallenge && !isApplyingFriendChallengeConfig && r2 !== activeFriendChallenge.mode) {
+          showMessage("Les param\xE8tres sont verrouill\xE9s pour ce d\xE9fi amis.", "warning");
+          g.classList.remove("visible");
+          return;
+        }
         h && (h.textContent = e2.childNodes[0].textContent.trim());
         const a2 = e2.querySelector(".difficulty-pill"), n2 = p.querySelector(".difficulty-pill");
         if (a2) {
@@ -4555,6 +5104,11 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     }), v.querySelectorAll("li").forEach((e2) => {
       e2.addEventListener("click", () => {
         const t2 = e2.dataset.value;
+        if (activeFriendChallenge && !isApplyingFriendChallengeConfig && t2 !== activeFriendChallenge.gameType) {
+          showMessage("Les param\xE8tres sont verrouill\xE9s pour ce d\xE9fi amis.", "warning");
+          v.classList.remove("visible");
+          return;
+        }
         f && (f.textContent = e2.childNodes[0].textContent.trim());
         const r2 = e2.querySelector(".difficulty-pill");
         if (r2) {
@@ -4591,7 +5145,9 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       isSessionRunning && togglePause();
     });
     const M = document.getElementById("daily-mode-btn");
-    M && M.addEventListener("click", handleDailyModeClick), n && n.addEventListener("click", () => {
+    friendChallengeToggleBtn && (updateFriendChallengeToggleUI(), friendChallengeToggleBtn.addEventListener("click", () => {
+      handleFriendChallengeToggleClick();
+    })), setGameConfigurationControlsLocked(!!activeFriendChallenge), loadFriendChallengeLeaderboard(), M && M.addEventListener("click", handleDailyModeClick), n && n.addEventListener("click", () => {
       const applyMarathonSkipPenalty = () => {
         if ("marathon" !== getGameMode()) {
           return false;
@@ -4660,6 +5216,12 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
         }
       }
     }), t && t.addEventListener("change", () => {
+      if (activeFriendChallenge && !isApplyingFriendChallengeConfig && t.value !== activeFriendChallenge.mode) {
+        t.value = activeFriendChallenge.mode;
+        syncModeSelectButton();
+        showMessage("Les param\xE8tres sont verrouill\xE9s pour ce d\xE9fi amis.", "warning");
+        return;
+      }
       currentZoneMode = t.value;
       const e2 = currentZoneMode;
       updateTargetPanelTitle(), updateModeDifficultyPill(), updateScoreMetricUI(), streetsLayer && streetLayersById.size && streetLayersById.forEach((e3) => {
@@ -4669,6 +5231,11 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       const n2 = document.getElementById("street-info");
       n2 && ("rues-principales" === e2 || "main" === e2 || (n2.textContent = "", n2.style.display = "none"));
     }), a && a.addEventListener("change", () => {
+      if (activeFriendChallenge && activeFriendChallenge.mode === "quartier" && !isApplyingFriendChallengeConfig && normalizeQuartierKey(a.value) !== normalizeQuartierKey(activeFriendChallenge.quartierName)) {
+        setQuartierSelectionByName(activeFriendChallenge.quartierName);
+        showMessage("Les param\xE8tres sont verrouill\xE9s pour ce d\xE9fi amis.", "warning");
+        return;
+      }
       "quartier" === getZoneMode() && a.value ? highlightQuartier(a.value) : clearQuartierOverlay(), streetsLayer && streetLayersById.size && streetLayersById.forEach((e2) => {
         const t2 = getBaseStreetStyle2(e2), r2 = t2.weight > 0;
         e2.setStyle({ color: t2.color, weight: t2.weight }), e2.options.interactive = r2, e2.touchBuffer && (e2.touchBuffer.options.interactive = r2);
@@ -4736,7 +5303,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   }
   document.addEventListener("DOMContentLoaded", async () => {
     await loadStreetInfos();
-    setMapStatus("Chargement", "loading"), initMap(), initUI(), startTimersLoop(), loadStreets(), loadQuartiers(), loadMonuments(), loadAllLeaderboards(), document.body.classList.add("app-ready");
+    setMapStatus("Chargement", "loading"), initMap(), initUI(), initFriendChallengeModeFromUrl(), startTimersLoop(), loadStreets(), loadQuartiers(), loadMonuments(), loadAllLeaderboards(), document.body.classList.add("app-ready");
   });
   var infoEl = document.getElementById("street-info");
   function startTimersLoop() {
@@ -4936,6 +5503,9 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
         nativeSelect && nativeSelect.dispatchEvent(new Event("change"));
       }
     });
+    if (pendingFriendChallengeQuartierName) {
+      setQuartierSelectionByName(pendingFriendChallengeQuartierName) && (pendingFriendChallengeQuartierName = null);
+    }
   }
   function scrollSidebarToTargetPanel() {
     if (window.innerWidth >= 900) return;
@@ -4973,7 +5543,18 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   }
   function startNewSession() {
     document.body.classList.remove("session-ended");
-    const e = document.getElementById("quartier-select"), t = getZoneMode(), r = getGameMode(), a = document.getElementById("street-info");
+    const e = document.getElementById("quartier-select"), a = document.getElementById("street-info");
+    let t = getZoneMode(), r = getGameMode();
+    if (activeFriendChallenge) {
+      if (t !== activeFriendChallenge.mode || r !== activeFriendChallenge.gameType || "quartier" === activeFriendChallenge.mode && normalizeQuartierKey(getSelectedQuartier()) !== normalizeQuartierKey(activeFriendChallenge.quartierName)) {
+        applyFriendChallengeConfigToUI(activeFriendChallenge);
+        t = getZoneMode();
+        r = getGameMode();
+      }
+      if ("quartier" === activeFriendChallenge.mode && activeFriendChallenge.quartierName) {
+        setQuartierSelectionByName(activeFriendChallenge.quartierName) || (pendingFriendChallengeQuartierName = activeFriendChallenge.quartierName);
+      }
+    }
     a && (a.textContent = "", a.style.display = "none"), clearHighlight(), activeSessionId = generateSessionId(), correctCount = 0, totalAnswered = 0, summaryData = [], weightedScore = 0, errorsCount = 0, isPaused = false, pauseStartTime = null, remainingChronoMs = null, updateScoreUI(), updateTimeUI(0, 0), updateScoreMetricUI(), updateWeightedScoreUI(), updateSessionProgressBar();
     const n = document.getElementById("summary");
     if (n && (n.classList.add("hidden"), n.innerHTML = ""), clearSessionShareSlot(), isChronoMode = "chrono" === r, chronoEndTime = isChronoMode ? performance.now() + CHRONO_DURATION * 1e3 : null, setLectureTooltipsEnabled(false), "lecture" === r) {
@@ -4995,20 +5576,22 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
           "Aucun monument disponible (v\xE9rifiez data/marseille_monuments.geojson).",
           "error"
         );
-      if (setZoneLayersVisibility(t), clearQuartierOverlay(), "marathon" === r)
+      if (setZoneLayersVisibility(t), clearQuartierOverlay(), activeFriendChallenge) {
+        sessionMonuments = getFriendChallengeMonumentTargets();
+      } else if ("marathon" === r || "chrono" === r) {
         sessionMonuments = sampleWithoutReplacement(
           allMonuments,
           allMonuments.length
         );
-      else if ("chrono" === r)
-        sessionMonuments = sampleWithoutReplacement(
-          allMonuments,
-          allMonuments.length
-        );
-      else {
+      } else {
         const e3 = Math.min(SESSION_SIZE, allMonuments.length);
         sessionMonuments = sampleWithoutReplacement(allMonuments, e3);
       }
+      if (!sessionMonuments.length)
+        return void showMessage(
+          activeFriendChallenge ? "Impossible de d\xE9marrer ce d\xE9fi amis (monuments introuvables)." : "Aucun monument disponible pour cette session.",
+          "error"
+        );
       currentMonumentIndex = 0, currentMonumentTarget = null, currentTarget = null, currentQuartierTarget = null, isMonumentsMode = true, sessionStartTime = performance.now(), streetStartTime = null, isSessionRunning = true, updateStartStopButton(), updatePauseButton(), updateLayoutSessionState(), scrollSidebarToTargetPanel();
       const e2 = document.getElementById("skip-btn");
       return e2 && (e2.style.display = "inline-block"), setNewTarget(), showMessage("Session monuments d\xE9marr\xE9e.", "info"), void updateLayoutSessionState();
@@ -5019,12 +5602,19 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
           "Aucun quartier disponible (v\xE9rifiez data/marseille_quartiers_111.geojson).",
           "error"
         );
-      if ("marathon" === r || "chrono" === r) {
+      if (activeFriendChallenge) {
+        sessionQuartiers = getFriendChallengeQuartierTargets();
+      } else if ("marathon" === r || "chrono" === r) {
         sessionQuartiers = sampleWithoutReplacement(allQuartierFeatures, allQuartierFeatures.length);
       } else {
         const e3 = Math.min(SESSION_SIZE, allQuartierFeatures.length);
         sessionQuartiers = sampleWithoutReplacement(allQuartierFeatures, e3);
       }
+      if (!sessionQuartiers.length)
+        return void showMessage(
+          activeFriendChallenge ? "Impossible de d\xE9marrer ce d\xE9fi amis (quartiers introuvables)." : "Aucun quartier disponible pour cette session.",
+          "error"
+        );
       currentQuartierIndex = 0, currentQuartierTarget = null, currentTarget = null, currentMonumentTarget = null, setZoneLayersVisibility(t), clearQuartierOverlay(), sessionStartTime = performance.now(), streetStartTime = null, isSessionRunning = true, updateStartStopButton(), updatePauseButton(), updateLayoutSessionState(), scrollSidebarToTargetPanel();
       const e2 = document.getElementById("skip-btn");
       return e2 && (e2.style.display = "inline-block"), setNewTarget(), showMessage("Session quartiers d\xE9marr\xE9e.", "info"), void updateLayoutSessionState();
@@ -5043,13 +5633,19 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
         "Aucune rue nomm\xE9e disponible pour cette zone.",
         "error"
       );
-    if ("marathon" === r) sessionStreets = sampleWithoutReplacement(i, i.length);
-    else if ("chrono" === r)
+    if (activeFriendChallenge) {
+      sessionStreets = getFriendChallengeStreetTargets();
+    } else if ("marathon" === r || "chrono" === r) {
       sessionStreets = sampleWithoutReplacement(i, i.length);
-    else {
+    } else {
       const e2 = Math.min(SESSION_SIZE, i.length);
       sessionStreets = sampleWithoutReplacement(i, e2);
     }
+    if (!sessionStreets.length)
+      return void showMessage(
+        activeFriendChallenge ? "Impossible de d\xE9marrer ce d\xE9fi amis (rues introuvables)." : "Aucune rue disponible pour cette session.",
+        "error"
+      );
     currentIndex = 0, "quartier" === t && e && e.value ? highlightQuartier(e.value) : clearQuartierOverlay(), setZoneLayersVisibility(t), sessionStartTime = performance.now(), currentTarget = null, currentMonumentTarget = null, currentQuartierTarget = null, streetStartTime = null, isSessionRunning = true, updateStartStopButton(), updatePauseButton(), updateLayoutSessionState(), scrollSidebarToTargetPanel();
     const l = document.getElementById("skip-btn");
     l && !isLectureMode && (l.style.display = "inline-block"), setNewTarget(), showMessage("Session d\xE9marr\xE9e.", "info");
@@ -5072,7 +5668,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     if ("monuments" === getZoneMode()) {
       if (currentMonumentIndex >= sessionMonuments.length) {
         if ("chrono" !== e) return void endSession();
-        shuffle(sessionMonuments), currentMonumentIndex = 0;
+        activeFriendChallenge ? currentMonumentIndex = 0 : (shuffle(sessionMonuments), currentMonumentIndex = 0);
       }
       currentTarget = null, currentMonumentTarget = sessionMonuments[currentMonumentIndex], streetStartTime = performance.now(), hasAnsweredCurrentItem = false, resetWeightedBar();
       const t2 = currentMonumentTarget.properties.name, r2 = document.getElementById("target-street");
@@ -5081,7 +5677,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     if ("quartiers-ville" === getZoneMode()) {
       if (currentQuartierIndex >= sessionQuartiers.length) {
         if ("chrono" !== e) return void endSession();
-        shuffle(sessionQuartiers), currentQuartierIndex = 0;
+        activeFriendChallenge ? currentQuartierIndex = 0 : (shuffle(sessionQuartiers), currentQuartierIndex = 0);
       }
       currentTarget = null, currentMonumentTarget = null, currentQuartierTarget = sessionQuartiers[currentQuartierIndex], streetStartTime = performance.now(), hasAnsweredCurrentItem = false, resetWeightedBar();
       const t2 = getQuartierTargetName(currentQuartierTarget), r2 = document.getElementById("target-street");
@@ -5089,7 +5685,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     }
     if (currentIndex >= sessionStreets.length) {
       if ("chrono" !== e) return void endSession();
-      shuffle(sessionStreets), currentIndex = 0;
+      activeFriendChallenge ? currentIndex = 0 : (shuffle(sessionStreets), currentIndex = 0);
     }
     currentMonumentTarget = null, currentQuartierTarget = null, currentTarget = sessionStreets[currentIndex], streetStartTime = performance.now(), hasAnsweredCurrentItem = false, resetWeightedBar();
     const t = currentTarget.properties.name, r = document.getElementById("target-street");
@@ -5606,7 +6202,8 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       });
     }), M(S), d.classList.remove("hidden"), showMessage("Session termin\xE9e.", "info");
     const T = document.getElementById("target-street");
-    T && (T.textContent = "\u2014", requestAnimationFrame(fitTargetStreetText)), refreshLectureStreetSearchForCurrentMode(), currentUser && currentUser.token && sendScoreToServer({
+    T && (T.textContent = "\u2014", requestAnimationFrame(fitTargetStreetText)), refreshLectureStreetSearchForCurrentMode();
+    const sessionScorePayload = {
       zoneMode: o,
       quartierName: u,
       gameMode: l,
@@ -5616,7 +6213,8 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       totalTimeSec: t,
       itemsTotal: poolSize,
       itemsCorrect: n
-    }), loadLeaderboard(o, u, l);
+    };
+    currentUser && currentUser.token && (activeFriendChallenge ? sendFriendChallengeScoreToServer(sessionScorePayload) : sendScoreToServer(sessionScorePayload)), loadLeaderboard(o, u, l);
   }
   function updateScoreUI() {
     const e = document.getElementById("score"), t = document.getElementById("score-pill");
@@ -5671,6 +6269,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       renderUserSticker,
       loadProfile
     });
+    loadFriendChallengeLeaderboard();
   }
   infoEl && (infoEl.textContent = ""), function() {
     const e = document.getElementById("weighted-score-help-btn"), t = document.getElementById("weighted-score-help");
@@ -5749,7 +6348,47 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       loadAllLeaderboards
     });
   }
+  function sendFriendChallengeScoreToServer(e) {
+    if (isDailyMode || !activeFriendChallenge || !currentUser || !currentUser.token) {
+      return;
+    }
+    try {
+      fetch(`${API_URL}/api/friend-challenges/${encodeURIComponent(activeFriendChallenge.code)}/score`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${currentUser.token}`
+        },
+        body: JSON.stringify({
+          score: e.score,
+          itemsCorrect: e.itemsCorrect,
+          itemsTotal: e.itemsTotal,
+          timeSec: e.totalTimeSec
+        })
+      }).then(
+        (response) => response.json().catch(() => ({})).then((payload) => ({ ok: response.ok, status: response.status, payload }))
+      ).then(({ ok, status, payload }) => {
+        if (!ok) {
+          if (status === 401) {
+            showMessage("Connectez-vous pour enregistrer votre score sur ce d\xE9fi.", "warning");
+          } else {
+            console.warn("Friend challenge score rejected:", payload);
+          }
+          return;
+        }
+        loadFriendChallengeLeaderboard();
+      }).catch((error) => {
+        console.error("Erreur envoi score d\xE9fi amis :", error);
+      });
+    } catch (error) {
+      console.error("Erreur envoi score d\xE9fi amis (synchrone) :", error);
+    }
+  }
   async function handleDailyModeClick() {
+    if (activeFriendChallenge) {
+      showMessage("D\xE9sactivez le d\xE9fi amis avant de lancer un Daily.", "warning");
+      return;
+    }
     if (currentUser && currentUser.token)
       try {
         const e = await fetch(API_URL + "/api/daily", {

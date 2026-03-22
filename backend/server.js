@@ -652,10 +652,73 @@ const SCORE_MODE_ALIASES = {
 };
 const ALLOWED_SCORE_MODES = new Set(['ville', 'quartier', 'quartiers-ville', 'rues-principales', 'rues-celebres', 'monuments']);
 const ALLOWED_SCORE_GAME_TYPES = new Set(['classique', 'marathon', 'chrono']);
+const ALLOWED_FRIEND_CHALLENGE_GAME_TYPES = new Set(['classique', 'marathon', 'chrono']);
 const MAX_SCORE_ITEMS = 100000;
 const MAX_SCORE_SECONDS = 24 * 60 * 60;
 const MAX_DAILY_DISTANCE_METERS = 1000000;
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const FRIEND_CHALLENGE_CODE_LENGTH = 10;
+const FRIEND_CHALLENGE_CODE_PATTERN = /^[A-Z0-9]{10}$/;
+const FRIEND_CHALLENGE_EXPIRATION_DAYS = readEnvIntegerInRange(
+    'FRIEND_CHALLENGE_EXPIRATION_DAYS',
+    30,
+    1,
+    365,
+);
+const FRIEND_CHALLENGE_CLASSIQUE_SIZE = 20;
+
+function normalizeQuartierChallengeKey(value) {
+    let normalized = String(value || '').trim();
+    if (!normalized) {
+        return '';
+    }
+    const legacySuffixMatch = normalized.match(/^(.+)\s+\((L'|L’|La|Le|Les)\)$/i);
+    if (legacySuffixMatch) {
+        let body = legacySuffixMatch[1].trim();
+        let article = legacySuffixMatch[2].trim();
+        article = /^l[’']/i.test(article)
+            ? "L'"
+            : article.charAt(0).toUpperCase() + article.slice(1).toLowerCase();
+        normalized = `${article} ${body}`;
+    }
+    return normalized
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[’`´]/g, "'")
+        .replace(/[-‐‑‒–—]/g, '-')
+        .replace(/\s*-\s*/g, '-')
+        .replace(/\s+/g, ' ')
+        .toLowerCase();
+}
+
+function shuffleCopy(items) {
+    const copy = Array.isArray(items) ? [...items] : [];
+    for (let index = copy.length - 1; index > 0; index -= 1) {
+        const randomIndex = Math.floor(Math.random() * (index + 1));
+        [copy[index], copy[randomIndex]] = [copy[randomIndex], copy[index]];
+    }
+    return copy;
+}
+
+function normalizeChallengeCode(rawCode) {
+    return String(rawCode || '').trim().toUpperCase();
+}
+
+function generateFriendChallengeCode() {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    const bytes = crypto.randomBytes(FRIEND_CHALLENGE_CODE_LENGTH);
+    for (let index = 0; index < FRIEND_CHALLENGE_CODE_LENGTH; index += 1) {
+        code += alphabet[bytes[index] % alphabet.length];
+    }
+    return code;
+}
+
+function getFriendChallengeExpiryDate() {
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + FRIEND_CHALLENGE_EXPIRATION_DAYS);
+    return expiresAt;
+}
 
 function parseScoreSubmission(body) {
     const rawMode = String(body?.mode || '').trim();
@@ -718,6 +781,99 @@ function parseScoreSubmission(body) {
             timeSec,
             quartierName,
             sessionId: sessionIdRaw,
+        },
+    };
+}
+
+function parseFriendChallengeCreateSubmission(body) {
+    const rawMode = String(body?.mode || '').trim();
+    const mode = SCORE_MODE_ALIASES[rawMode] || rawMode;
+    const gameType = String(body?.gameType || '').trim();
+    if (!ALLOWED_SCORE_MODES.has(mode) || !ALLOWED_FRIEND_CHALLENGE_GAME_TYPES.has(gameType)) {
+        return { ok: false, error: 'Invalid mode or gameType' };
+    }
+
+    const quartierName = mode === 'quartier'
+        ? normalizeOptionalText(body?.quartierName, 120)
+        : null;
+
+    if (mode === 'quartier' && !quartierName) {
+        return { ok: false, error: 'quartierName is required for quartier mode' };
+    }
+
+    return {
+        ok: true,
+        value: {
+            mode,
+            gameType,
+            quartierName,
+        },
+    };
+}
+
+function parseFriendChallengeScoreSubmission(body, gameType) {
+    const score = toFiniteNumber(body?.score);
+    const itemsCorrect = toFiniteInteger(body?.itemsCorrect);
+    const itemsTotal = toFiniteInteger(body?.itemsTotal);
+    const timeSec = toFiniteNumber(body?.timeSec);
+
+    if (score === null || itemsCorrect === null || itemsTotal === null || timeSec === null) {
+        return { ok: false, error: 'Score payload contains invalid numeric values' };
+    }
+    if (itemsTotal < 1 || itemsTotal > MAX_SCORE_ITEMS) {
+        return { ok: false, error: 'itemsTotal out of allowed range' };
+    }
+    if (itemsCorrect < 0 || itemsCorrect > itemsTotal) {
+        return { ok: false, error: 'itemsCorrect must be between 0 and itemsTotal' };
+    }
+    if (timeSec < 0 || timeSec > MAX_SCORE_SECONDS) {
+        return { ok: false, error: 'timeSec out of allowed range' };
+    }
+
+    let normalizedScore = score;
+    if (gameType === 'classique') {
+        const maxClassiqueScore = itemsTotal * 10;
+        if (normalizedScore < 0 || normalizedScore > maxClassiqueScore + 0.001) {
+            return { ok: false, error: 'score out of allowed range for classique mode' };
+        }
+    } else {
+        if (score < 0 || score > MAX_SCORE_ITEMS) {
+            return { ok: false, error: 'score out of allowed range' };
+        }
+        normalizedScore = itemsCorrect;
+    }
+
+    return {
+        ok: true,
+        value: {
+            score: normalizedScore,
+            itemsCorrect,
+            itemsTotal,
+            timeSec,
+        },
+    };
+}
+
+function serializeFriendChallenge(challenge) {
+    const targetNames = Array.isArray(challenge?.targets_json)
+        ? challenge.targets_json
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+        : [];
+
+    return {
+        code: challenge.code,
+        mode: challenge.mode,
+        gameType: challenge.game_type,
+        quartierName: challenge.quartier_name || null,
+        targetType: challenge.target_type,
+        itemCount: challenge.item_count || targetNames.length,
+        targetNames,
+        createdAt: challenge.created_at,
+        expiresAt: challenge.expires_at,
+        createdBy: {
+            userId: challenge.created_by_user_id,
+            username: challenge.created_by_username,
         },
     };
 }
@@ -1121,6 +1277,128 @@ app.post('/api/scores', authenticateToken, asyncHandler(async (req, res) => {
     return res.json({ success: true, duplicate: !saved });
 }));
 
+app.post('/api/friend-challenges', authenticateToken, asyncHandler(async (req, res) => {
+    const parsed = parseFriendChallengeCreateSubmission(req.body);
+    if (!parsed.ok) {
+        return res.status(400).json({ error: parsed.error });
+    }
+
+    const lists = await getEffectiveContentLists();
+    const built = buildFriendChallengeTargets({
+        mode: parsed.value.mode,
+        gameType: parsed.value.gameType,
+        quartierName: parsed.value.quartierName,
+        lists,
+    });
+    if (!built.ok) {
+        return res.status(400).json({ error: built.error });
+    }
+
+    let created = null;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+        const code = generateFriendChallengeCode();
+        try {
+            created = await db.createFriendChallenge({
+                code,
+                createdByUserId: req.user.id,
+                createdByUsername: req.user.username,
+                mode: built.value.mode,
+                gameType: built.value.gameType,
+                quartierName: built.value.quartierName,
+                targetType: built.value.targetType,
+                targetNames: built.value.targetNames,
+                expiresAt: getFriendChallengeExpiryDate(),
+            });
+            break;
+        } catch (error) {
+            if (error?.code === '23505') {
+                continue;
+            }
+            throw error;
+        }
+    }
+
+    if (!created) {
+        return res.status(500).json({ error: 'Could not allocate a unique challenge code' });
+    }
+
+    const payload = serializeFriendChallenge(created);
+    return res.json({
+        ...payload,
+        sharePath: `/?defi=${payload.code}`,
+    });
+}));
+
+app.get('/api/friend-challenges/:code', asyncHandler(async (req, res) => {
+    const code = normalizeChallengeCode(req.params.code);
+    if (!FRIEND_CHALLENGE_CODE_PATTERN.test(code)) {
+        return res.status(400).json({ error: 'Invalid challenge code format' });
+    }
+
+    const challenge = await db.getFriendChallengeByCode(code);
+    if (!challenge) {
+        return res.status(404).json({ error: 'Challenge not found or expired' });
+    }
+
+    return res.json({
+        ...serializeFriendChallenge(challenge),
+        sharePath: `/?defi=${challenge.code}`,
+    });
+}));
+
+app.post('/api/friend-challenges/:code/score', authenticateToken, asyncHandler(async (req, res) => {
+    const code = normalizeChallengeCode(req.params.code);
+    if (!FRIEND_CHALLENGE_CODE_PATTERN.test(code)) {
+        return res.status(400).json({ error: 'Invalid challenge code format' });
+    }
+
+    const challenge = await db.getFriendChallengeByCode(code);
+    if (!challenge) {
+        return res.status(404).json({ error: 'Challenge not found or expired' });
+    }
+
+    const parsed = parseFriendChallengeScoreSubmission(req.body, challenge.game_type);
+    if (!parsed.ok) {
+        return res.status(400).json({ error: parsed.error });
+    }
+
+    const updated = await db.addFriendChallengeScore(
+        challenge.id,
+        req.user.id,
+        parsed.value.score,
+        parsed.value.itemsCorrect,
+        parsed.value.itemsTotal,
+        parsed.value.timeSec,
+        challenge.game_type,
+    );
+
+    return res.json({ success: true, updated });
+}));
+
+app.get('/api/friend-challenges/:code/leaderboard', authenticateToken, asyncHandler(async (req, res) => {
+    const code = normalizeChallengeCode(req.params.code);
+    if (!FRIEND_CHALLENGE_CODE_PATTERN.test(code)) {
+        return res.status(400).json({ error: 'Invalid challenge code format' });
+    }
+
+    const challenge = await db.getFriendChallengeByCode(code);
+    if (!challenge) {
+        return res.status(404).json({ error: 'Challenge not found or expired' });
+    }
+
+    const hasPlayed = await db.hasPlayedFriendChallenge(challenge.id, req.user.id);
+    const isCreator = Number.parseInt(challenge.created_by_user_id, 10) === Number.parseInt(req.user.id, 10);
+    if (!hasPlayed && !isCreator) {
+        return res.status(403).json({ error: 'Leaderboard available after first completed run' });
+    }
+
+    const rows = await db.getFriendChallengeLeaderboard(challenge.id, challenge.game_type, 20);
+    return res.json({
+        challenge: serializeFriendChallenge(challenge),
+        rows,
+    });
+}));
+
 // ----------------------
 // Profile Route
 // ----------------------
@@ -1262,13 +1540,144 @@ app.get('/api/visitors/count', async (req, res) => {
 // ----------------------
 
 let streetIndex = [];
+let streetChallengeIndex = [];
+let quartierChallengeIndex = [];
+let monumentChallengeIndex = [];
 try {
     streetIndex = JSON.parse(
         fs.readFileSync(path.join(__dirname, 'data', 'streets_index.json'), 'utf8')
     );
     console.log(`Loaded ${streetIndex.length} streets from index for daily challenges.`);
+    streetChallengeIndex = streetIndex
+        .map((entry) => ({
+            name: String(entry?.name || '').trim(),
+            normalizedName: normalizeContentName(entry?.name),
+            quartierName: String(entry?.quartier || '').trim(),
+            quartierKey: normalizeQuartierChallengeKey(entry?.quartier),
+        }))
+        .filter((entry) => entry.name && entry.normalizedName);
 } catch (err) {
     console.error('Could not load street index for daily:', err.message);
+}
+
+try {
+    const rawQuartiers = fs.readFileSync(path.join(__dirname, 'data', 'marseille_quartiers_111.geojson'), 'utf8');
+    const parsedQuartiers = JSON.parse(rawQuartiers);
+    const seen = new Set();
+    quartierChallengeIndex = (Array.isArray(parsedQuartiers?.features) ? parsedQuartiers.features : [])
+        .map((feature) => String(feature?.properties?.nom_qua || '').trim())
+        .filter(Boolean)
+        .filter((name) => {
+            const key = normalizeQuartierChallengeKey(name);
+            if (!key || seen.has(key)) {
+                return false;
+            }
+            seen.add(key);
+            return true;
+        })
+        .map((name) => ({
+            name,
+            key: normalizeQuartierChallengeKey(name),
+        }));
+    console.log(`Loaded ${quartierChallengeIndex.length} quartiers for friend challenges.`);
+} catch (err) {
+    console.error('Could not load quartiers index for friend challenges:', err.message);
+}
+
+try {
+    const rawMonuments = fs.readFileSync(path.join(__dirname, 'data', 'marseille_monuments.geojson'), 'utf8');
+    const parsedMonuments = JSON.parse(rawMonuments);
+    const seen = new Set();
+    monumentChallengeIndex = (Array.isArray(parsedMonuments?.features) ? parsedMonuments.features : [])
+        .filter((feature) => feature?.geometry?.type === 'Point')
+        .map((feature) => String(feature?.properties?.name || '').trim())
+        .filter(Boolean)
+        .filter((name) => {
+            const normalized = normalizeContentName(name);
+            if (!normalized || seen.has(normalized)) {
+                return false;
+            }
+            seen.add(normalized);
+            return true;
+        })
+        .map((name) => ({
+            name,
+            normalizedName: normalizeContentName(name),
+        }));
+    console.log(`Loaded ${monumentChallengeIndex.length} monuments for friend challenges.`);
+} catch (err) {
+    console.error('Could not load monuments index for friend challenges:', err.message);
+}
+
+function buildFriendChallengeTargets({ mode, gameType, quartierName, lists }) {
+    const normalizedMode = SCORE_MODE_ALIASES[mode] || mode;
+    const normalizedGameType = String(gameType || '').trim();
+    const famousStreetSet = new Set(Array.isArray(lists?.famousStreets) ? lists.famousStreets : []);
+    const mainStreetSet = new Set(Array.isArray(lists?.mainStreets) ? lists.mainStreets : []);
+    const monumentSet = new Set(Array.isArray(lists?.monuments) ? lists.monuments : []);
+
+    let targetType = 'street';
+    let pool = [];
+    let effectiveQuartierName = null;
+
+    if (normalizedMode === 'quartiers-ville') {
+        targetType = 'quartier';
+        pool = quartierChallengeIndex.map((entry) => entry.name);
+    } else if (normalizedMode === 'monuments') {
+        targetType = 'monument';
+        if (monumentSet.size > 0) {
+            pool = monumentChallengeIndex
+                .filter((entry) => monumentSet.has(entry.normalizedName))
+                .map((entry) => entry.name);
+        } else {
+            pool = monumentChallengeIndex.map((entry) => entry.name);
+        }
+    } else {
+        targetType = 'street';
+        if (normalizedMode === 'rues-principales') {
+            pool = streetChallengeIndex
+                .filter((entry) => mainStreetSet.has(entry.normalizedName))
+                .map((entry) => entry.name);
+        } else if (normalizedMode === 'rues-celebres') {
+            pool = streetChallengeIndex
+                .filter((entry) => famousStreetSet.has(entry.normalizedName))
+                .map((entry) => entry.name);
+        } else if (normalizedMode === 'quartier') {
+            const quartierKey = normalizeQuartierChallengeKey(quartierName);
+            if (!quartierKey) {
+                return { ok: false, error: 'quartierName is required for quartier mode' };
+            }
+            const streetPool = streetChallengeIndex.filter((entry) => entry.quartierKey === quartierKey);
+            if (streetPool.length > 0) {
+                effectiveQuartierName = streetPool[0].quartierName || quartierName;
+            } else {
+                effectiveQuartierName = quartierName;
+            }
+            pool = streetPool.map((entry) => entry.name);
+        } else {
+            pool = streetChallengeIndex.map((entry) => entry.name);
+        }
+    }
+
+    if (!Array.isArray(pool) || pool.length === 0) {
+        return { ok: false, error: 'No targets available for this configuration' };
+    }
+
+    const shuffledPool = shuffleCopy(pool);
+    const targetNames = normalizedGameType === 'classique'
+        ? shuffledPool.slice(0, Math.min(FRIEND_CHALLENGE_CLASSIQUE_SIZE, shuffledPool.length))
+        : shuffledPool;
+
+    return {
+        ok: true,
+        value: {
+            mode: normalizedMode,
+            gameType: normalizedGameType,
+            quartierName: normalizedMode === 'quartier' ? effectiveQuartierName : null,
+            targetType,
+            targetNames,
+        },
+    };
 }
 
 function extractStreetGeometry(streetName) {
