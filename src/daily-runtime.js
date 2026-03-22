@@ -673,7 +673,9 @@ export function updateDailyResultPanelRuntime({
   }
 
   if (isSessionRunning) {
+    panel.classList.add("hidden");
     panel.style.display = "none";
+    content.innerHTML = "";
     return;
   }
 
@@ -696,7 +698,9 @@ export function updateDailyResultPanelRuntime({
   }
 
   if (guesses.length === 0) {
+    panel.classList.add("hidden");
     panel.style.display = "none";
+    content.innerHTML = "";
     return;
   }
 
@@ -708,7 +712,9 @@ export function updateDailyResultPanelRuntime({
   const isFinished = isSuccess || guesses.length >= 7 || isDailyGameOver;
 
   if (!isFinished) {
+    panel.classList.add("hidden");
     panel.style.display = "none";
+    content.innerHTML = "";
     return;
   }
 
@@ -738,6 +744,7 @@ export function updateDailyResultPanelRuntime({
   html += '<p class="daily-share-hint">L\'image est plus impactante sur les réseaux !</p>';
 
   content.innerHTML = html;
+  panel.classList.remove("hidden");
   panel.style.display = "block";
 
   const shareTextBtn = document.getElementById("daily-share-text");

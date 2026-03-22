@@ -3415,7 +3415,9 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       return;
     }
     if (isSessionRunning2) {
+      panel.classList.add("hidden");
       panel.style.display = "none";
+      content.innerHTML = "";
       return;
     }
     let guesses = Array.isArray(dailyGuessHistory2) ? dailyGuessHistory2.slice() : [];
@@ -3434,7 +3436,9 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       guesses = [];
     }
     if (guesses.length === 0) {
+      panel.classList.add("hidden");
       panel.style.display = "none";
+      content.innerHTML = "";
       return;
     }
     const normalizedGuesses = guesses.slice(0, 7).map((guess) => ({ ...guess }));
@@ -3443,7 +3447,9 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     const isSuccess = guesses.some((guess) => guess.distance < 20);
     const isFinished = isSuccess || guesses.length >= 7 || isDailyGameOver;
     if (!isFinished) {
+      panel.classList.add("hidden");
       panel.style.display = "none";
+      content.innerHTML = "";
       return;
     }
     const result = {
@@ -3466,6 +3472,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     html += "</div>";
     html += `<p class="daily-share-hint">L'image est plus impactante sur les r\xE9seaux !</p>`;
     content.innerHTML = html;
+    panel.classList.remove("hidden");
     panel.style.display = "block";
     const shareTextBtn = document.getElementById("daily-share-text");
     const shareImageBtn = document.getElementById("daily-share-image");

@@ -1449,6 +1449,7 @@ button {
   body.session-running .leaderboard-panel,
   body.session-running .panel-feedback,
   body.session-running .panel-params,
+  body.session-running #daily-result-panel,
   body.session-running .stats-panel,
   body.session-running .user-panel {
     display: none !important;
