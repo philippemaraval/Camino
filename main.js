@@ -3499,26 +3499,26 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     if (!targetStreetEl) {
       return;
     }
-    if (!window.matchMedia("(max-width: 600px)").matches) {
-      targetStreetEl.style.fontSize = "";
+    targetStreetEl.style.fontSize = "";
+    targetStreetEl.style.whiteSpace = "";
+    targetStreetEl.style.overflowWrap = "";
+    targetStreetEl.style.wordBreak = "";
+    if (!window.matchMedia("(max-width: 900px)").matches) {
       return;
     }
-    targetStreetEl.style.whiteSpace = "nowrap";
-    const availableWidth = targetStreetEl.clientWidth;
-    if (availableWidth <= 0) {
-      return;
-    }
-    targetStreetEl.style.fontSize = "18px";
-    if (targetStreetEl.scrollWidth <= availableWidth) {
-      return;
-    }
-    let low = 11;
+    targetStreetEl.style.whiteSpace = "normal";
+    targetStreetEl.style.overflowWrap = "anywhere";
+    targetStreetEl.style.wordBreak = "break-word";
+    let low = 12;
     let high = 18;
-    let best = 11;
+    let best = 12;
+    const maxLines = 3;
     while (low <= high) {
       const mid = Math.floor((low + high) / 2);
       targetStreetEl.style.fontSize = `${mid}px`;
-      if (targetStreetEl.scrollWidth <= availableWidth) {
+      const lineHeight = parseFloat(window.getComputedStyle(targetStreetEl).lineHeight) || mid * 1.2;
+      const renderedLines = Math.max(1, Math.round(targetStreetEl.scrollHeight / lineHeight));
+      if (renderedLines <= maxLines) {
         best = mid;
         low = mid + 1;
       } else {
@@ -4809,10 +4809,6 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   async function initFriendChallengeModeFromUrl() {
     if (friendChallengeInitPromise) {
       return friendChallengeInitPromise;
-    }
-    if (!currentUser || !currentUser.token) {
-      activeFriendChallenge && deactivateFriendChallenge({ clearUrl: false, silent: true });
-      return null;
     }
     const challengeCode = getFriendChallengeCodeFromUrl();
     if (!challengeCode) {
@@ -6280,10 +6276,6 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       renderUserSticker,
       loadProfile
     });
-    if (!currentUser || !currentUser.token) {
-      activeFriendChallenge && deactivateFriendChallenge({ clearUrl: false, silent: true });
-      return;
-    }
     if (!activeFriendChallenge && getFriendChallengeCodeFromUrl()) {
       initFriendChallengeModeFromUrl();
       return;

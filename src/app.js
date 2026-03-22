@@ -1549,10 +1549,6 @@ async function initFriendChallengeModeFromUrl() {
   if (friendChallengeInitPromise) {
     return friendChallengeInitPromise;
   }
-  if (!currentUser || !currentUser.token) {
-    activeFriendChallenge && deactivateFriendChallenge({ clearUrl: !1, silent: !0 });
-    return null;
-  }
   const challengeCode = getFriendChallengeCodeFromUrl();
   if (!challengeCode) {
     deactivateFriendChallenge({ clearUrl: !1, silent: !0 });
@@ -4027,10 +4023,6 @@ function updateUserUI() {
     renderUserSticker,
     loadProfile,
   });
-  if (!currentUser || !currentUser.token) {
-    activeFriendChallenge && deactivateFriendChallenge({ clearUrl: !1, silent: !0 });
-    return;
-  }
   if (!activeFriendChallenge && getFriendChallengeCodeFromUrl()) {
     initFriendChallengeModeFromUrl();
     return;

@@ -776,30 +776,30 @@ export function fitTargetStreetTextRuntime(targetStreetElementId = "target-stree
     return;
   }
 
-  if (!window.matchMedia("(max-width: 600px)").matches) {
-    targetStreetEl.style.fontSize = "";
+  targetStreetEl.style.fontSize = "";
+  targetStreetEl.style.whiteSpace = "";
+  targetStreetEl.style.overflowWrap = "";
+  targetStreetEl.style.wordBreak = "";
+
+  if (!window.matchMedia("(max-width: 900px)").matches) {
     return;
   }
 
-  targetStreetEl.style.whiteSpace = "nowrap";
-  const availableWidth = targetStreetEl.clientWidth;
-  if (availableWidth <= 0) {
-    return;
-  }
+  targetStreetEl.style.whiteSpace = "normal";
+  targetStreetEl.style.overflowWrap = "anywhere";
+  targetStreetEl.style.wordBreak = "break-word";
 
-  targetStreetEl.style.fontSize = "18px";
-  if (targetStreetEl.scrollWidth <= availableWidth) {
-    return;
-  }
-
-  let low = 11;
+  let low = 12;
   let high = 18;
-  let best = 11;
+  let best = 12;
+  const maxLines = 3;
 
   while (low <= high) {
     const mid = Math.floor((low + high) / 2);
     targetStreetEl.style.fontSize = `${mid}px`;
-    if (targetStreetEl.scrollWidth <= availableWidth) {
+    const lineHeight = parseFloat(window.getComputedStyle(targetStreetEl).lineHeight) || mid * 1.2;
+    const renderedLines = Math.max(1, Math.round(targetStreetEl.scrollHeight / lineHeight));
+    if (renderedLines <= maxLines) {
       best = mid;
       low = mid + 1;
     } else {
