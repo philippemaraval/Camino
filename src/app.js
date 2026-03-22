@@ -344,8 +344,6 @@ async function refreshDailyReminderControls() {
     return;
   }
 
-  const scheduleLabel = formatReminderTimeLabel(config.reminder || DEFAULT_REMINDER_CONFIG);
-
   let registration;
   try {
     registration = await ensureServiceWorkerRegistration();
@@ -370,15 +368,15 @@ async function refreshDailyReminderControls() {
     const browserEndpoint = typeof browserSubscription?.endpoint === "string" ? browserSubscription.endpoint : "";
     const isSubscribed = Boolean(serverSubscribed && browserEndpoint && browserEndpoint === serverEndpoint);
     if (isSubscribed) {
-      setDailyReminderStatus(`Rappel actif tous les jours à ${scheduleLabel}.`, "success");
+      setDailyReminderStatus("Rappel actif tous les jours.", "success");
       setDailyReminderButtons({ canEnable: false, canDisable: true, loading: false });
     } else if (serverSubscribed) {
       setDailyReminderStatus(
-        `Rappel actif sur un autre appareil/navigateur. Active-le ici pour ${scheduleLabel}.`,
+        "Rappel actif sur un autre appareil/navigateur. Active-le ici.",
       );
       setDailyReminderButtons({ canEnable: true, canDisable: false, loading: false });
     } else {
-      setDailyReminderStatus(`Rappel inactif. Active-le pour ${scheduleLabel}.`);
+      setDailyReminderStatus("Rappel inactif. Active-le.");
       setDailyReminderButtons({ canEnable: true, canDisable: false, loading: false });
     }
   } catch (error) {

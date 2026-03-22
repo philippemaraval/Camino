@@ -3776,7 +3776,6 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       setDailyReminderButtons({ canEnable: false, canDisable: false, loading: false });
       return;
     }
-    const scheduleLabel = formatReminderTimeLabel(config.reminder || DEFAULT_REMINDER_CONFIG);
     let registration;
     try {
       registration = await ensureServiceWorkerRegistration();
@@ -3798,15 +3797,15 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       const browserEndpoint = typeof (browserSubscription == null ? void 0 : browserSubscription.endpoint) === "string" ? browserSubscription.endpoint : "";
       const isSubscribed = Boolean(serverSubscribed && browserEndpoint && browserEndpoint === serverEndpoint);
       if (isSubscribed) {
-        setDailyReminderStatus(`Rappel actif tous les jours \xE0 ${scheduleLabel}.`, "success");
+        setDailyReminderStatus("Rappel actif tous les jours.", "success");
         setDailyReminderButtons({ canEnable: false, canDisable: true, loading: false });
       } else if (serverSubscribed) {
         setDailyReminderStatus(
-          `Rappel actif sur un autre appareil/navigateur. Active-le ici pour ${scheduleLabel}.`
+          "Rappel actif sur un autre appareil/navigateur. Active-le ici."
         );
         setDailyReminderButtons({ canEnable: true, canDisable: false, loading: false });
       } else {
-        setDailyReminderStatus(`Rappel inactif. Active-le pour ${scheduleLabel}.`);
+        setDailyReminderStatus("Rappel inactif. Active-le.");
         setDailyReminderButtons({ canEnable: true, canDisable: false, loading: false });
       }
     } catch (error) {
