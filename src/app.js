@@ -256,15 +256,20 @@ async function loadStreetInfosFromStaticFile() {
   }
 }
 
+async function loadPublicContentFromApi() {
+  const response = await fetch(`${API_URL}/api/content/public`);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  const payload = await response.json();
+  applyPublicContentPayload(payload);
+  return payload;
+}
+
 async function loadStreetInfos() {
   await loadStreetInfosFromStaticFile();
   try {
-    const response = await fetch(`${API_URL}/api/content/public`);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const payload = await response.json();
-    applyPublicContentPayload(payload);
+    await loadPublicContentFromApi();
     console.log("Runtime content loaded from API");
   } catch (error) {
     console.warn("Runtime content API unavailable, fallback to static content.", error);
@@ -855,6 +860,8 @@ let sessionStreets = [],
   activeFriendChallenge = null,
   friendChallengeInitPromise = null,
   pendingFriendChallengeQuartierName = null;
+let monumentsContentSyncPromise = null;
+let monumentsSessionRefreshPending = !1;
 
 const FRIEND_CHALLENGE_QUERY_PARAM = "defi";
 const FRIEND_CHALLENGE_ALLOWED_GAME_MODES = new Set(["classique", "marathon", "chrono"]);
@@ -2326,6 +2333,10 @@ function initUI() {
             a && a.value && highlightQuartier(a.value))
           : ((r.style.display = "none"), clearQuartierOverlay()),
         setZoneLayersVisibility(e),
+        "monuments" === e &&
+        refreshMonumentsContentAndLayer().catch((error) => {
+          console.warn("Actualisation des monuments impossible après changement de mode.", error);
+        }),
         updateStreetInfoPanelVisibility(),
         refreshLectureTooltipsIfNeeded(),
         isLectureMode &&
@@ -2638,7 +2649,7 @@ function loadStreets() {
     });
 }
 function loadMonuments() {
-  loadMonumentsRuntime({
+  return loadMonumentsRuntime({
     map,
     L,
     uiTheme: UI_THEME,
@@ -2666,6 +2677,25 @@ function loadMonuments() {
     .catch((e) => {
       console.error("Erreur lors du chargement des monuments :", e);
     });
+}
+
+function refreshMonumentsContentAndLayer() {
+  if (monumentsContentSyncPromise) {
+    return monumentsContentSyncPromise;
+  }
+
+  monumentsContentSyncPromise = (async () => {
+    try {
+      await loadPublicContentFromApi();
+    } catch (error) {
+      console.warn("Impossible d'actualiser les monuments via API, conservation du cache runtime.", error);
+    }
+    await loadMonuments();
+  })().finally(() => {
+    monumentsContentSyncPromise = null;
+  });
+
+  return monumentsContentSyncPromise;
 }
 function setLectureTooltipsEnabled(e) {
   setLectureTooltipsEnabledRuntime(e, {
@@ -2800,12 +2830,13 @@ function exitLectureModeToMenu() {
     updateLayoutSessionState(),
     showMessage("Retour au menu.", "info"));
 }
-function startNewSession() {
+function startNewSession(options = {}) {
   document.body.classList.remove("session-ended");
   const e = document.getElementById("quartier-select"),
     a = document.getElementById("street-info");
   let t = getZoneMode(),
     r = getGameMode();
+  const skipMonumentsRefresh = !0 === options.skipMonumentsRefresh;
   if (activeFriendChallenge) {
     if (
       t !== activeFriendChallenge.mode ||
@@ -2821,6 +2852,22 @@ function startNewSession() {
       setQuartierSelectionByName(activeFriendChallenge.quartierName) ||
         (pendingFriendChallengeQuartierName = activeFriendChallenge.quartierName);
     }
+  }
+  if ("monuments" === t && !skipMonumentsRefresh) {
+    if (monumentsSessionRefreshPending) {
+      return;
+    }
+    monumentsSessionRefreshPending = !0;
+    showMessage("Actualisation des monuments...", "info");
+    refreshMonumentsContentAndLayer()
+      .catch((error) => {
+        console.warn("Actualisation des monuments avant session impossible.", error);
+      })
+      .finally(() => {
+        monumentsSessionRefreshPending = !1;
+        startNewSession({ skipMonumentsRefresh: !0 });
+      });
+    return;
   }
   (a && ((a.textContent = ""), (a.style.display = "none")),
     clearHighlight(),

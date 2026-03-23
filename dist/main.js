@@ -3762,15 +3762,19 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       console.error("Failed to load local street infos", error);
     }
   }
+  async function loadPublicContentFromApi() {
+    const response = await fetch(`${API_URL}/api/content/public`);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    applyPublicContentPayload(payload);
+    return payload;
+  }
   async function loadStreetInfos() {
     await loadStreetInfosFromStaticFile();
     try {
-      const response = await fetch(`${API_URL}/api/content/public`);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const payload = await response.json();
-      applyPublicContentPayload(payload);
+      await loadPublicContentFromApi();
       console.log("Runtime content loaded from API");
     } catch (error) {
       console.warn("Runtime content API unavailable, fallback to static content.", error);
@@ -4262,6 +4266,8 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   var activeFriendChallenge = null;
   var friendChallengeInitPromise = null;
   var pendingFriendChallengeQuartierName = null;
+  var monumentsContentSyncPromise = null;
+  var monumentsSessionRefreshPending = false;
   var FRIEND_CHALLENGE_QUERY_PARAM = "defi";
   var FRIEND_CHALLENGE_ALLOWED_GAME_MODES = /* @__PURE__ */ new Set(["classique", "marathon", "chrono"]);
   var FRIEND_CHALLENGE_ALLOWED_ZONE_MODES = /* @__PURE__ */ new Set([
@@ -5348,7 +5354,9 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       updateTargetPanelTitle(), updateModeDifficultyPill(), updateScoreMetricUI(), streetsLayer && streetLayersById.size && streetLayersById.forEach((e3) => {
         const t2 = getBaseStreetStyle2(e3), r2 = t2.weight > 0;
         e3.setStyle({ color: t2.color, weight: t2.weight }), e3.options.interactive = r2, e3.touchBuffer && (e3.touchBuffer.options.interactive = r2);
-      }), "quartier" === e2 ? (r.style.display = "block", a && a.value && highlightQuartier(a.value)) : (r.style.display = "none", clearQuartierOverlay()), setZoneLayersVisibility(e2), updateStreetInfoPanelVisibility(), refreshLectureTooltipsIfNeeded(), isLectureMode && refreshLectureStreetSearchForCurrentMode({ preserveQuery: true });
+      }), "quartier" === e2 ? (r.style.display = "block", a && a.value && highlightQuartier(a.value)) : (r.style.display = "none", clearQuartierOverlay()), setZoneLayersVisibility(e2), "monuments" === e2 && refreshMonumentsContentAndLayer().catch((error) => {
+        console.warn("Actualisation des monuments impossible apr\xE8s changement de mode.", error);
+      }), updateStreetInfoPanelVisibility(), refreshLectureTooltipsIfNeeded(), isLectureMode && refreshLectureStreetSearchForCurrentMode({ preserveQuery: true });
       const n2 = document.getElementById("street-info");
       n2 && ("rues-principales" === e2 || "main" === e2 || (n2.textContent = "", n2.style.display = "none"));
     }), a && a.addEventListener("change", () => {
@@ -5543,7 +5551,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     });
   }
   function loadMonuments() {
-    loadMonumentsRuntime({
+    return loadMonumentsRuntime({
       map,
       L,
       uiTheme: UI_THEME,
@@ -5567,6 +5575,22 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     }).catch((e) => {
       console.error("Erreur lors du chargement des monuments :", e);
     });
+  }
+  function refreshMonumentsContentAndLayer() {
+    if (monumentsContentSyncPromise) {
+      return monumentsContentSyncPromise;
+    }
+    monumentsContentSyncPromise = (async () => {
+      try {
+        await loadPublicContentFromApi();
+      } catch (error) {
+        console.warn("Impossible d'actualiser les monuments via API, conservation du cache runtime.", error);
+      }
+      await loadMonuments();
+    })().finally(() => {
+      monumentsContentSyncPromise = null;
+    });
+    return monumentsContentSyncPromise;
   }
   function setLectureTooltipsEnabled(e) {
     setLectureTooltipsEnabledRuntime(e, {
@@ -5663,10 +5687,11 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     const a = document.getElementById("target-street");
     a && (a.textContent = "\u2014"), updateTargetPanelTitle(), updateTimeUI(0, 0), updateStartStopButton(), updatePauseButton(), updateGameModeControls(), refreshLectureStreetSearchForCurrentMode(), updateLayoutSessionState(), showMessage("Retour au menu.", "info");
   }
-  function startNewSession() {
+  function startNewSession(options = {}) {
     document.body.classList.remove("session-ended");
     const e = document.getElementById("quartier-select"), a = document.getElementById("street-info");
     let t = getZoneMode(), r = getGameMode();
+    const skipMonumentsRefresh = true === options.skipMonumentsRefresh;
     if (activeFriendChallenge) {
       if (t !== activeFriendChallenge.mode || r !== activeFriendChallenge.gameType || "quartier" === activeFriendChallenge.mode && normalizeQuartierKey(getSelectedQuartier()) !== normalizeQuartierKey(activeFriendChallenge.quartierName)) {
         applyFriendChallengeConfigToUI(activeFriendChallenge);
@@ -5676,6 +5701,20 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       if ("quartier" === activeFriendChallenge.mode && activeFriendChallenge.quartierName) {
         setQuartierSelectionByName(activeFriendChallenge.quartierName) || (pendingFriendChallengeQuartierName = activeFriendChallenge.quartierName);
       }
+    }
+    if ("monuments" === t && !skipMonumentsRefresh) {
+      if (monumentsSessionRefreshPending) {
+        return;
+      }
+      monumentsSessionRefreshPending = true;
+      showMessage("Actualisation des monuments...", "info");
+      refreshMonumentsContentAndLayer().catch((error) => {
+        console.warn("Actualisation des monuments avant session impossible.", error);
+      }).finally(() => {
+        monumentsSessionRefreshPending = false;
+        startNewSession({ skipMonumentsRefresh: true });
+      });
+      return;
     }
     a && (a.textContent = "", a.style.display = "none"), clearHighlight(), activeSessionId = generateSessionId(), correctCount = 0, totalAnswered = 0, summaryData = [], weightedScore = 0, errorsCount = 0, isPaused = false, pauseStartTime = null, remainingChronoMs = null, updateScoreUI(), updateTimeUI(0, 0), updateScoreMetricUI(), updateWeightedScoreUI(), updateSessionProgressBar();
     const n = document.getElementById("summary");
