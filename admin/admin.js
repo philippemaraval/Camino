@@ -12,6 +12,7 @@ const state = {
   username: "",
   role: "",
   content: null,
+  selectedStreetName: "",
 };
 
 const refs = {
@@ -32,6 +33,8 @@ const refs = {
   streetNameInput: document.getElementById("street-name-input"),
   streetInfoText: document.getElementById("street-info-text"),
   saveStreetInfoBtn: document.getElementById("save-street-info-btn"),
+  addStreetToListBtn: document.getElementById("add-street-to-list-btn"),
+  removeStreetFromListBtn: document.getElementById("remove-street-from-list-btn"),
   deleteStreetInfoBtn: document.getElementById("delete-street-info-btn"),
   famousListText: document.getElementById("famous-list-text"),
   mainListText: document.getElementById("main-list-text"),
@@ -147,6 +150,20 @@ function parseListTextarea(value) {
   return normalized;
 }
 
+function normalizeNameArray(values) {
+  const dedup = new Set();
+  const normalized = [];
+  (Array.isArray(values) ? values : []).forEach((value) => {
+    const name = normalizeName(value);
+    if (!name || dedup.has(name)) {
+      return;
+    }
+    dedup.add(name);
+    normalized.push(name);
+  });
+  return normalized;
+}
+
 function listToTextarea(values) {
   return (Array.isArray(values) ? values : []).join("\n");
 }
@@ -195,6 +212,7 @@ function updateEditorFieldsForStreet(streetName) {
   const mode = getCurrentMode();
   const infoMap = state.content?.streetInfos?.[mode] || {};
   const normalizedName = normalizeName(streetName);
+  state.selectedStreetName = normalizedName;
   refs.streetNameInput.value = normalizedName;
   refs.streetInfoText.value = normalizedName ? infoMap[normalizedName] || "" : "";
 }
@@ -229,6 +247,26 @@ function renderStreetSelect(preferredStreetName = "") {
   } else {
     updateEditorFieldsForStreet("");
   }
+}
+
+function buildListsPayloadWithUpdates(updates = {}) {
+  return {
+    famousStreets: normalizeNameArray(
+      Object.prototype.hasOwnProperty.call(updates, "famousStreets")
+        ? updates.famousStreets
+        : state.content?.lists?.famousStreets,
+    ),
+    mainStreets: normalizeNameArray(
+      Object.prototype.hasOwnProperty.call(updates, "mainStreets")
+        ? updates.mainStreets
+        : state.content?.lists?.mainStreets,
+    ),
+    monuments: normalizeNameArray(
+      Object.prototype.hasOwnProperty.call(updates, "monuments")
+        ? updates.monuments
+        : state.content?.lists?.monuments,
+    ),
+  };
 }
 
 function renderListsEditors() {
@@ -326,23 +364,45 @@ async function onSaveStreetInfo() {
     setGlobalStatus("Nom de rue obligatoire.", "error");
     return;
   }
-  if (!infoText) {
-    setGlobalStatus("Le texte de la fiche est vide.", "error");
-    return;
+
+  const selectedStreetName = normalizeName(state.selectedStreetName || refs.streetSelect.value);
+  let previousStreetName = "";
+  if (selectedStreetName && selectedStreetName !== streetName) {
+    const shouldRename = window.confirm(
+      `Renommer "${selectedStreetName}" en "${streetName}" ?\n\n` +
+        "OK: met a jour l'entree existante.\n" +
+        "Annuler: cree ou met a jour la nouvelle entree sans toucher l'ancienne.",
+    );
+    if (shouldRename) {
+      previousStreetName = selectedStreetName;
+    }
   }
 
   try {
     setGlobalStatus("Enregistrement de la fiche...", "info");
+    const payload = {
+      mode,
+      streetName,
+      infoText,
+    };
+    if (previousStreetName) {
+      payload.previousStreetName = previousStreetName;
+    }
     await apiRequest("/api/editor/street-info", {
       method: "PUT",
-      body: {
-        mode,
-        streetName,
-        infoText,
-      },
+      body: payload,
     });
     await loadContent(streetName);
-    setGlobalStatus(`Fiche enregistree: ${streetName}`, "success");
+    if (previousStreetName) {
+      setGlobalStatus(`Rue renommee: ${previousStreetName} -> ${streetName}`, "success");
+    } else if (infoText) {
+      setGlobalStatus(`Fiche enregistree: ${streetName}`, "success");
+    } else {
+      setGlobalStatus(
+        `Nom enregistre sans texte pour "${streetName}" (texte de fiche vide autorise).`,
+        "success",
+      );
+    }
   } catch (error) {
     setGlobalStatus(`Echec enregistrement fiche: ${error.message}`, "error");
   }
@@ -350,7 +410,9 @@ async function onSaveStreetInfo() {
 
 async function onDeleteStreetInfo() {
   const mode = getCurrentMode();
-  const streetName = normalizeName(refs.streetNameInput.value || refs.streetSelect.value);
+  const streetName = normalizeName(
+    refs.streetNameInput.value || state.selectedStreetName || refs.streetSelect.value,
+  );
   if (!streetName) {
     setGlobalStatus("Selectionnez une rue a supprimer.", "error");
     return;
@@ -375,6 +437,92 @@ async function onDeleteStreetInfo() {
     setGlobalStatus(`Fiche supprimee: ${streetName}`, "success");
   } catch (error) {
     setGlobalStatus(`Echec suppression fiche: ${error.message}`, "error");
+  }
+}
+
+async function onAddStreetToModeList() {
+  if (!state.content) {
+    setGlobalStatus("Contenu non charge.", "error");
+    return;
+  }
+
+  const mode = getCurrentMode();
+  const listKey = getModeListKey(mode);
+  const streetName = normalizeName(
+    refs.streetNameInput.value || state.selectedStreetName || refs.streetSelect.value,
+  );
+  if (!streetName) {
+    setGlobalStatus("Nom de rue obligatoire.", "error");
+    return;
+  }
+
+  const currentList = normalizeNameArray(state.content?.lists?.[listKey]);
+  if (currentList.includes(streetName)) {
+    setGlobalStatus(`"${streetName}" est deja dans la liste active.`, "info");
+    return;
+  }
+
+  const updatedList = [...currentList, streetName];
+  const payload =
+    listKey === "mainStreets"
+      ? buildListsPayloadWithUpdates({ mainStreets: updatedList })
+      : buildListsPayloadWithUpdates({ famousStreets: updatedList });
+
+  try {
+    setGlobalStatus("Ajout dans la liste active...", "info");
+    await apiRequest("/api/editor/lists", {
+      method: "PUT",
+      body: payload,
+    });
+    await loadContent(streetName);
+    setGlobalStatus(`Rue ajoutee a la liste active: ${streetName}`, "success");
+  } catch (error) {
+    setGlobalStatus(`Echec ajout liste: ${error.message}`, "error");
+  }
+}
+
+async function onRemoveStreetFromModeList() {
+  if (!state.content) {
+    setGlobalStatus("Contenu non charge.", "error");
+    return;
+  }
+
+  const mode = getCurrentMode();
+  const listKey = getModeListKey(mode);
+  const streetName = normalizeName(
+    refs.streetNameInput.value || state.selectedStreetName || refs.streetSelect.value,
+  );
+  if (!streetName) {
+    setGlobalStatus("Nom de rue obligatoire.", "error");
+    return;
+  }
+
+  const currentList = normalizeNameArray(state.content?.lists?.[listKey]);
+  if (!currentList.includes(streetName)) {
+    setGlobalStatus(`"${streetName}" n'est pas present dans la liste active.`, "info");
+    return;
+  }
+
+  if (!window.confirm(`Retirer "${streetName}" de la liste active ?`)) {
+    return;
+  }
+
+  const updatedList = currentList.filter((name) => name !== streetName);
+  const payload =
+    listKey === "mainStreets"
+      ? buildListsPayloadWithUpdates({ mainStreets: updatedList })
+      : buildListsPayloadWithUpdates({ famousStreets: updatedList });
+
+  try {
+    setGlobalStatus("Suppression de la liste active...", "info");
+    await apiRequest("/api/editor/lists", {
+      method: "PUT",
+      body: payload,
+    });
+    await loadContent(streetName);
+    setGlobalStatus(`Rue retiree de la liste active: ${streetName}`, "success");
+  } catch (error) {
+    setGlobalStatus(`Echec suppression liste: ${error.message}`, "error");
   }
 }
 
@@ -427,6 +575,8 @@ function bindEvents() {
   });
 
   refs.saveStreetInfoBtn.addEventListener("click", onSaveStreetInfo);
+  refs.addStreetToListBtn.addEventListener("click", onAddStreetToModeList);
+  refs.removeStreetFromListBtn.addEventListener("click", onRemoveStreetFromModeList);
   refs.deleteStreetInfoBtn.addEventListener("click", onDeleteStreetInfo);
   refs.saveListsBtn.addEventListener("click", onSaveLists);
 }

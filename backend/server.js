@@ -1006,6 +1006,10 @@ function normalizeStreetInfoMode(mode) {
     return normalizedMode === 'famous' || normalizedMode === 'main' ? normalizedMode : '';
 }
 
+function getStreetListKeyForMode(mode) {
+    return mode === 'main' ? 'mainStreets' : 'famousStreets';
+}
+
 app.get('/api/content/public', asyncHandler(async (req, res) => {
     const snapshot = await getEffectiveContentSnapshot();
     return res.json({
@@ -1048,22 +1052,46 @@ app.put('/api/editor/street-info', authenticateToken, requireContentEditor, asyn
         return res.status(400).json({ error: 'Missing streetName' });
     }
 
+    const previousStreetName = normalizeContentName(req.body?.previousStreetName).slice(0, MAX_NAME_LENGTH);
     if (typeof req.body?.infoText !== 'string') {
         return res.status(400).json({ error: 'Missing infoText' });
     }
     const infoText = req.body.infoText.trim();
-    if (!infoText) {
-        return res.status(400).json({ error: 'infoText cannot be empty' });
-    }
 
     const streetInfos = await getEffectiveStreetInfos();
-    streetInfos[mode][streetName] = infoText.slice(0, MAX_INFO_LENGTH);
-    await db.setAppSetting(STREET_INFOS_SETTING_KEY, JSON.stringify(streetInfos));
-
     const lists = await getEffectiveContentLists();
+    let listsUpdated = false;
+    if (previousStreetName && previousStreetName !== streetName) {
+        delete streetInfos[mode][previousStreetName];
+
+        const listKey = getStreetListKeyForMode(mode);
+        const currentList = Array.isArray(lists?.[listKey]) ? lists[listKey] : [];
+        const renamedList = normalizeNameList(
+            currentList.map((name) => (name === previousStreetName ? streetName : name)),
+        );
+        const listChanged =
+            renamedList.length !== currentList.length ||
+            renamedList.some((name, index) => name !== currentList[index]);
+        if (listChanged) {
+            lists[listKey] = renamedList;
+            listsUpdated = true;
+        }
+    }
+
+    if (infoText) {
+        streetInfos[mode][streetName] = infoText.slice(0, MAX_INFO_LENGTH);
+    } else {
+        delete streetInfos[mode][streetName];
+    }
+    await db.setAppSetting(STREET_INFOS_SETTING_KEY, JSON.stringify(streetInfos));
+    if (listsUpdated) {
+        await db.setAppSetting(CONTENT_LISTS_SETTING_KEY, JSON.stringify(lists));
+    }
+
     return res.json({
         success: true,
         streetInfos,
+        lists,
         stats: computeContentStats(streetInfos, lists),
     });
 }));
