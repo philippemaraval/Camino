@@ -95,68 +95,44 @@
       max-width: 72ch;
     }
 
-    .pill-row {
-      margin-top: 14px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .rank-chip {
-      display: inline-flex;
-      align-items: center;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.84);
-      padding: 5px 10px;
-      font-weight: 700;
-      font-size: 12px;
-    }
-
-    .rank-chip--next {
-      border-color: rgba(39, 129, 74, 0.32);
-      background: rgba(236, 250, 238, 0.9);
-      color: #12502f;
-    }
-
-    .arrow {
-      color: var(--text-muted);
-      font-weight: 800;
-    }
-
     .panel {
       background: #fff;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       box-shadow: 0 10px 22px rgba(12, 29, 87, 0.08);
-      padding: 18px;
+      padding: 12px;
     }
 
     .overview {
-      margin-bottom: 12px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
     .overview-count {
-      display: block;
+      display: inline-flex;
+      align-items: center;
+      min-width: 70px;
       font-family: "JetBrains Mono", ui-monospace, monospace;
-      font-size: 16px;
+      font-size: 13px;
       font-weight: 800;
       color: var(--brand-sea-950);
     }
 
     .overview-label {
-      display: block;
-      margin-top: 2px;
-      font-size: 11px;
+      display: inline-flex;
+      align-items: center;
+      font-size: 9px;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.045em;
       color: var(--text-muted);
+      white-space: nowrap;
     }
 
     .overview-bar {
-      margin-top: 7px;
-      height: 7px;
+      flex: 1;
+      height: 6px;
       border-radius: 999px;
       background: rgba(18, 41, 122, 0.12);
       overflow: hidden;
@@ -170,93 +146,107 @@
     }
 
     .tree {
-      position: relative;
-      padding-left: 26px;
-      display: flex;
-      flex-direction: column;
+      width: 100%;
+    }
+
+    .tree-shell {
+      display: grid;
+      grid-template-columns: minmax(86px, 116px) 1fr;
       gap: 10px;
+      align-items: start;
     }
 
-    .tree::before {
-      content: "";
-      position: absolute;
-      left: 9px;
-      top: 7px;
-      bottom: 7px;
-      width: 2px;
-      border-radius: 999px;
-      background: rgba(18, 41, 122, 0.2);
-    }
-
-    .zone {
+    .tree-current-wrap {
       position: relative;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 10px;
-      background: rgba(255, 255, 255, 0.92);
+      padding-top: 54px;
     }
 
-    .zone::before {
+    .tree-current-wrap::after {
       content: "";
       position: absolute;
-      left: -16px;
-      top: 20px;
-      width: 16px;
+      right: -10px;
+      top: 70px;
+      width: 10px;
       height: 2px;
       border-radius: 999px;
       background: rgba(18, 41, 122, 0.2);
     }
 
-    .zone-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-
-    .zone-title {
-      margin: 0;
-      font-family: "Montserrat", system-ui, sans-serif;
-      font-size: 14px;
-      color: var(--brand-sea-950);
-    }
-
-    .zone-count {
+    .rank-node {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 6px 8px;
       font-size: 11px;
-      font-family: "JetBrains Mono", ui-monospace, monospace;
-      color: var(--text-secondary);
+      font-weight: 800;
+      line-height: 1.2;
+      text-align: center;
+      box-shadow: 0 3px 10px rgba(18, 41, 122, 0.08);
     }
 
-    .mode-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 7px;
+    .rank-node--current {
+      color: var(--brand-sea-900);
+      border-color: rgba(18, 41, 122, 0.24);
     }
 
-    .mode-card {
-      border: 1px solid rgba(18, 41, 122, 0.16);
-      border-radius: var(--radius-sm);
-      padding: 7px;
-      background: rgba(245, 248, 255, 0.9);
+    .rank-node--next {
+      color: #12502f;
+      border-color: rgba(36, 121, 69, 0.3);
+      background: rgba(237, 250, 240, 0.96);
     }
 
-    .mode-card.done {
-      background: rgba(233, 250, 238, 0.95);
-      border-color: rgba(38, 131, 77, 0.36);
+    .tree-main-wrap {
+      min-width: 0;
     }
 
-    .mode-card.pending {
-      background: rgba(255, 247, 231, 0.95);
-      border-color: rgba(172, 114, 31, 0.35);
+    .tree-next-row {
+      margin-left: 16px;
+      margin-bottom: 8px;
+      max-width: 220px;
     }
 
-    .mode-card.new {
-      background: rgba(243, 247, 251, 0.95);
-      border-color: rgba(101, 121, 149, 0.26);
+    .tree-branches {
+      position: relative;
+      padding-left: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
 
-    .mode-head {
+    .tree-branches::before {
+      content: "";
+      position: absolute;
+      left: 3px;
+      top: 4px;
+      bottom: 4px;
+      width: 2px;
+      border-radius: 999px;
+      background: rgba(18, 41, 122, 0.2);
+    }
+
+    .branch-row {
+      position: relative;
+    }
+
+    .branch-row::before {
+      content: "";
+      position: absolute;
+      left: -15px;
+      top: 17px;
+      width: 15px;
+      height: 2px;
+      border-radius: 999px;
+      background: rgba(18, 41, 122, 0.2);
+    }
+
+    .zone-box {
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 6px;
+      background: rgba(255, 255, 255, 0.92);
+    }
+
+    .zone-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -264,44 +254,92 @@
       margin-bottom: 4px;
     }
 
-    .mode-name {
+    .zone-title {
+      margin: 0;
+      font-family: "Montserrat", system-ui, sans-serif;
+      font-size: 12px;
+      color: var(--brand-sea-950);
+      line-height: 1.2;
+    }
+
+    .zone-count {
       font-size: 10px;
-      font-weight: 700;
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      color: var(--text-secondary);
+    }
+
+    .mode-mini-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 4px;
+    }
+
+    .mode-mini {
+      border: 1px solid rgba(18, 41, 122, 0.16);
+      border-radius: 7px;
+      padding: 4px;
+      background: rgba(245, 248, 255, 0.9);
+    }
+
+    .mode-mini.done {
+      background: rgba(233, 250, 238, 0.95);
+      border-color: rgba(38, 131, 77, 0.36);
+    }
+
+    .mode-mini.pending {
+      background: rgba(255, 247, 231, 0.95);
+      border-color: rgba(172, 114, 31, 0.35);
+    }
+
+    .mode-mini.new {
+      background: rgba(243, 247, 251, 0.95);
+      border-color: rgba(101, 121, 149, 0.26);
+    }
+
+    .mode-mini-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+      margin-bottom: 2px;
+    }
+
+    .mode-mini-tag {
+      font-size: 9px;
+      font-weight: 800;
       color: var(--brand-sea-950);
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.03em;
     }
 
-    .mode-state {
-      font-size: 9px;
-      color: var(--text-secondary);
-    }
-
-    .mode-values {
-      display: flex;
-      flex-direction: column;
-      gap: 1px;
-      font-size: 10px;
-      color: var(--text-secondary);
-    }
-
-    .mode-metric {
-      margin-top: 4px;
+    .mode-mini-state {
       font-size: 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-muted);
+      color: var(--text-secondary);
     }
 
-    .mode-bar {
-      margin-top: 4px;
-      height: 5px;
+    .mode-mini-score {
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--brand-sea-950);
+    }
+
+    .mode-mini-miss {
+      margin-top: 1px;
+      font-size: 8px;
+      color: var(--text-muted);
+      min-height: 10px;
+    }
+
+    .mode-mini-bar {
+      margin-top: 2px;
+      height: 3px;
       border-radius: 999px;
       background: rgba(18, 41, 122, 0.1);
       overflow: hidden;
     }
 
-    .mode-bar span {
+    .mode-mini-bar span {
       display: block;
       height: 100%;
       border-radius: inherit;
@@ -333,11 +371,31 @@
 
       .hero,
       .panel {
-        padding: 14px;
+        padding: 10px;
       }
 
-      .mode-grid {
+      .overview {
+        flex-wrap: wrap;
+      }
+
+      .tree-shell {
         grid-template-columns: 1fr;
+      }
+
+      .tree-current-wrap {
+        padding-top: 0;
+      }
+
+      .tree-current-wrap::after {
+        display: none;
+      }
+
+      .tree-next-row {
+        margin-left: 0;
+      }
+
+      .tree-branches {
+        padding-left: 14px;
       }
     }
   </style>
@@ -351,11 +409,6 @@
       </div>
       <h1>Arbre de progression des rangs</h1>
       <p id="subtitle" class="subtitle">Chargement de votre progression…</p>
-      <div id="rank-pill-row" class="pill-row hidden">
-        <span id="current-rank-chip" class="rank-chip"></span>
-        <span class="arrow">→</span>
-        <span id="next-rank-chip" class="rank-chip rank-chip--next"></span>
-      </div>
     </header>
 
     <section class="panel">
@@ -584,25 +637,30 @@
         const root = document.getElementById("progress-root");
         const tree = document.getElementById("tree");
         const subtitle = document.getElementById("subtitle");
-        const pillRow = document.getElementById("rank-pill-row");
-        const currentRankChip = document.getElementById("current-rank-chip");
-        const nextRankChip = document.getElementById("next-rank-chip");
 
         const level = getCurrentRankLevel(profile);
         const currentRank = RANK_FLOW[level];
         const nextRank = RANK_FLOW[level + 1] || null;
 
-        subtitle.textContent = `${profile.username || "Joueur"} · progression globale vers le rang supérieur.`;
-        currentRankChip.textContent = currentRank.label;
-        pillRow.classList.remove("hidden");
+        subtitle.textContent = `${profile.username || "Joueur"} · format compact de l'arbre vers le rang supérieur.`;
 
         if (!nextRank) {
-          nextRankChip.textContent = "Rang maximum atteint";
-          statusBox.innerHTML = "Tu as déjà atteint le plus haut rang global. Rien à débloquer de plus sur cet arbre.";
+          tree.innerHTML = `
+            <div class="tree-shell">
+              <div class="tree-current-wrap">
+                <div class="rank-node rank-node--current">${escapeHtml(currentRank.label)}</div>
+              </div>
+              <div class="tree-main-wrap">
+                <div class="tree-next-row">
+                  <div class="rank-node rank-node--next">Rang maximum atteint</div>
+                </div>
+              </div>
+            </div>`;
+          statusBox.innerHTML = "Tu as déjà atteint le plus haut rang global.";
+          statusBox.classList.remove("hidden");
+          root.classList.remove("hidden");
           return;
         }
-
-        nextRankChip.textContent = nextRank.label;
 
         const progress = computeProgress(profile, nextRank.letter);
         const pct = progress.total > 0 ? Math.round((progress.doneTotal / progress.total) * 100) : 0;
@@ -613,39 +671,46 @@
         const zonesHtml = progress.zones.map((zone) => {
           const modesHtml = zone.modes.map((mode) => {
             const cardClass = mode.reached ? "done" : mode.rowExists ? "pending" : "new";
-            const stateLabel = mode.reached ? "Validé" : mode.rowExists ? "À faire" : "Non joué";
-            const secondary = mode.reached
-              ? "Seuil atteint"
-              : mode.rowExists
-                ? `Manque ${mode.missingDisplay}`
-                : "Commencer une partie";
+            const tag = mode.gameType === "classique" ? "C" : mode.gameType === "marathon" ? "M" : "Ch";
+            const stateLabel = mode.reached ? "✓" : mode.rowExists ? "!" : "·";
+            const secondary = mode.reached ? "OK" : mode.rowExists ? `-${mode.missingDisplay}` : "Nouveau";
 
             return `
-              <article class="mode-card ${cardClass}">
-                <div class="mode-head">
-                  <span class="mode-name">${escapeHtml(mode.gameLabel)}</span>
-                  <span class="mode-state">${stateLabel}</span>
+              <article class="mode-mini ${cardClass}">
+                <div class="mode-mini-head">
+                  <span class="mode-mini-tag">${tag}</span>
+                  <span class="mode-mini-state">${stateLabel}</span>
                 </div>
-                <div class="mode-values">
-                  <span>${mode.currentDisplay} / ${mode.targetDisplay}</span>
-                  <span>${secondary}</span>
-                </div>
-                <div class="mode-metric">${mode.metricLabel}</div>
-                <div class="mode-bar"><span style="width:${mode.progressPct.toFixed(0)}%"></span></div>
+                <div class="mode-mini-score">${mode.currentDisplay}/${mode.targetDisplay}</div>
+                <div class="mode-mini-miss">${secondary}</div>
+                <div class="mode-mini-bar"><span style="width:${mode.progressPct.toFixed(0)}%"></span></div>
               </article>`;
           }).join("");
 
           return `
-            <section class="zone">
-              <div class="zone-head">
-                <h3 class="zone-title">${escapeHtml(zone.zoneLabel)}</h3>
-                <span class="zone-count">${zone.zoneDone}/${zone.zoneTotal}</span>
+            <section class="branch-row">
+              <div class="zone-box">
+                <div class="zone-head">
+                  <h3 class="zone-title">${escapeHtml(zone.zoneLabel)}</h3>
+                  <span class="zone-count">${zone.zoneDone}/${zone.zoneTotal}</span>
+                </div>
+                <div class="mode-mini-grid">${modesHtml}</div>
               </div>
-              <div class="mode-grid">${modesHtml}</div>
             </section>`;
         }).join("");
 
-        tree.innerHTML = zonesHtml;
+        tree.innerHTML = `
+          <div class="tree-shell">
+            <div class="tree-current-wrap">
+              <div class="rank-node rank-node--current">${escapeHtml(currentRank.label)}</div>
+            </div>
+            <div class="tree-main-wrap">
+              <div class="tree-next-row">
+                <div class="rank-node rank-node--next">${escapeHtml(nextRank.label)}</div>
+              </div>
+              <div class="tree-branches">${zonesHtml}</div>
+            </div>
+          </div>`;
         statusBox.classList.add("hidden");
         root.classList.remove("hidden");
       }
