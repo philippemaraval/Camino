@@ -297,6 +297,24 @@ function formatFriendChallengeSerial(serialNumber) {
   return `#${String(parsed).padStart(5, "0")}`;
 }
 
+function normalizeFriendChallengeCreator(rawCreator) {
+  if (!rawCreator || typeof rawCreator !== "object") {
+    return null;
+  }
+  const rawUserId = Number.parseInt(rawCreator.userId, 10);
+  const userId = Number.isInteger(rawUserId) && rawUserId > 0 ? rawUserId : null;
+  const username = typeof rawCreator.username === "string" ? rawCreator.username.trim() : "";
+  if (!userId && !username) {
+    return null;
+  }
+  return { userId, username };
+}
+
+function getFriendChallengeCreatorLabel(challenge) {
+  const username = String(challenge?.createdBy?.username || "").trim();
+  return username ? `@${username}` : "";
+}
+
 function toPushServerKeyUint8Array(base64String) {
   const normalized = String(base64String || "").trim();
   const padding = "=".repeat((4 - (normalized.length % 4)) % 4);
@@ -1123,7 +1141,7 @@ function normalizeFriendChallengePayload(payload) {
     targetNames,
     itemCount: Number.parseInt(payload?.itemCount, 10) || targetNames.length,
     sharePath: typeof payload?.sharePath === "string" ? payload.sharePath : "",
-    createdBy: payload?.createdBy || null,
+    createdBy: normalizeFriendChallengeCreator(payload?.createdBy),
   };
 }
 
@@ -1322,16 +1340,29 @@ function updateFriendChallengeToggleUI() {
   if (!button) return;
   const isOn = !!activeFriendChallenge;
   const serialCode = formatFriendChallengeSerial(activeFriendChallenge?.serialNumber) || activeFriendChallenge?.serialCode || "";
+  const creatorLabel = getFriendChallengeCreatorLabel(activeFriendChallenge);
   button.classList.toggle("is-on", isOn);
   button.textContent = isOn ? "Défi amis ON" : "Défi amis OFF";
   button.setAttribute("aria-pressed", isOn ? "true" : "false");
   if (!serialLabel) return;
-  if (isOn && serialCode) {
-    serialLabel.textContent = `Numéro du défi : ${serialCode}`;
+  if (isOn && (serialCode || creatorLabel)) {
+    serialLabel.innerHTML = "";
+    if (serialCode) {
+      const serialText = document.createElement("span");
+      serialText.className = "friends-challenge-serial-id";
+      serialText.textContent = `Numéro du défi : ${serialCode}`;
+      serialLabel.appendChild(serialText);
+    }
+    if (creatorLabel) {
+      const creatorText = document.createElement("span");
+      creatorText.className = "friends-challenge-serial-creator";
+      creatorText.textContent = `Créateur : ${creatorLabel}`;
+      serialLabel.appendChild(creatorText);
+    }
     serialLabel.classList.remove("hidden");
     return;
   }
-  serialLabel.textContent = "";
+  serialLabel.innerHTML = "";
   serialLabel.classList.add("hidden");
 }
 
@@ -1360,9 +1391,16 @@ function renderFriendChallengeMiniBoard({ rows = [], infoMessage = "" } = {}) {
   const title = document.createElement("p");
   title.className = "friend-challenge-board-title";
   const serialCode = formatFriendChallengeSerial(activeFriendChallenge?.serialNumber) || activeFriendChallenge?.serialCode || "";
-  title.textContent = serialCode
-    ? `Mini leaderboard — Défi amis ${serialCode}`
-    : "Mini leaderboard — Défi amis";
+  const creatorLabel = getFriendChallengeCreatorLabel(activeFriendChallenge);
+  if (serialCode && creatorLabel) {
+    title.textContent = `Mini leaderboard — Défi amis ${serialCode} · ${creatorLabel}`;
+  } else if (serialCode) {
+    title.textContent = `Mini leaderboard — Défi amis ${serialCode}`;
+  } else if (creatorLabel) {
+    title.textContent = `Mini leaderboard — Défi amis · ${creatorLabel}`;
+  } else {
+    title.textContent = "Mini leaderboard — Défi amis";
+  }
   slot.appendChild(title);
 
   const meta = document.createElement("p");
@@ -1478,6 +1516,21 @@ async function loadFriendChallengeLeaderboard() {
         infoMessage: payload?.error || "Mini leaderboard indisponible pour le moment.",
       });
       return;
+    }
+    const payloadChallenge = normalizeFriendChallengePayload(payload?.challenge);
+    if (
+      payloadChallenge &&
+      activeFriendChallenge &&
+      payloadChallenge.code === challengeCode &&
+      activeFriendChallenge.code === challengeCode
+    ) {
+      activeFriendChallenge = {
+        ...activeFriendChallenge,
+        serialNumber: payloadChallenge.serialNumber || activeFriendChallenge.serialNumber,
+        serialCode: payloadChallenge.serialCode || activeFriendChallenge.serialCode,
+        createdBy: payloadChallenge.createdBy || activeFriendChallenge.createdBy || null,
+      };
+      updateFriendChallengeToggleUI();
     }
     renderFriendChallengeMiniBoard({ rows: Array.isArray(payload?.rows) ? payload.rows : [] });
   } catch (error) {

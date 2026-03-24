@@ -508,11 +508,27 @@ select:focus {
 }
 
 .friends-challenge-serial {
-  font-family: var(--font-mono);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
   font-size: 10px;
   font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.01em;
+}
+
+.friends-challenge-serial-id {
+  font-family: var(--font-mono);
   color: var(--primary-dark);
   letter-spacing: 0.04em;
+}
+
+.friends-challenge-serial-creator {
+  color: var(--text-secondary);
+  letter-spacing: 0.01em;
 }
 
 .tries-counter {

@@ -4009,6 +4009,23 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     }
     return `#${String(parsed).padStart(5, "0")}`;
   }
+  function normalizeFriendChallengeCreator(rawCreator) {
+    if (!rawCreator || typeof rawCreator !== "object") {
+      return null;
+    }
+    const rawUserId = Number.parseInt(rawCreator.userId, 10);
+    const userId = Number.isInteger(rawUserId) && rawUserId > 0 ? rawUserId : null;
+    const username = typeof rawCreator.username === "string" ? rawCreator.username.trim() : "";
+    if (!userId && !username) {
+      return null;
+    }
+    return { userId, username };
+  }
+  function getFriendChallengeCreatorLabel(challenge) {
+    var _a;
+    const username = String(((_a = challenge == null ? void 0 : challenge.createdBy) == null ? void 0 : _a.username) || "").trim();
+    return username ? `@${username}` : "";
+  }
   function toPushServerKeyUint8Array(base64String) {
     const normalized = String(base64String || "").trim();
     const padding = "=".repeat((4 - normalized.length % 4) % 4);
@@ -4672,7 +4689,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       targetNames,
       itemCount: Number.parseInt(payload == null ? void 0 : payload.itemCount, 10) || targetNames.length,
       sharePath: typeof (payload == null ? void 0 : payload.sharePath) === "string" ? payload.sharePath : "",
-      createdBy: (payload == null ? void 0 : payload.createdBy) || null
+      createdBy: normalizeFriendChallengeCreator(payload == null ? void 0 : payload.createdBy)
     };
   }
   function getFriendChallengeCodeFromUrl() {
@@ -4850,16 +4867,29 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     if (!button) return;
     const isOn = !!activeFriendChallenge;
     const serialCode = formatFriendChallengeSerial(activeFriendChallenge == null ? void 0 : activeFriendChallenge.serialNumber) || (activeFriendChallenge == null ? void 0 : activeFriendChallenge.serialCode) || "";
+    const creatorLabel = getFriendChallengeCreatorLabel(activeFriendChallenge);
     button.classList.toggle("is-on", isOn);
     button.textContent = isOn ? "D\xE9fi amis ON" : "D\xE9fi amis OFF";
     button.setAttribute("aria-pressed", isOn ? "true" : "false");
     if (!serialLabel) return;
-    if (isOn && serialCode) {
-      serialLabel.textContent = `Num\xE9ro du d\xE9fi : ${serialCode}`;
+    if (isOn && (serialCode || creatorLabel)) {
+      serialLabel.innerHTML = "";
+      if (serialCode) {
+        const serialText = document.createElement("span");
+        serialText.className = "friends-challenge-serial-id";
+        serialText.textContent = `Num\xE9ro du d\xE9fi : ${serialCode}`;
+        serialLabel.appendChild(serialText);
+      }
+      if (creatorLabel) {
+        const creatorText = document.createElement("span");
+        creatorText.className = "friends-challenge-serial-creator";
+        creatorText.textContent = `Cr\xE9ateur : ${creatorLabel}`;
+        serialLabel.appendChild(creatorText);
+      }
       serialLabel.classList.remove("hidden");
       return;
     }
-    serialLabel.textContent = "";
+    serialLabel.innerHTML = "";
     serialLabel.classList.add("hidden");
   }
   function getZoneMode() {
@@ -4883,7 +4913,16 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     const title = document.createElement("p");
     title.className = "friend-challenge-board-title";
     const serialCode = formatFriendChallengeSerial(activeFriendChallenge == null ? void 0 : activeFriendChallenge.serialNumber) || (activeFriendChallenge == null ? void 0 : activeFriendChallenge.serialCode) || "";
-    title.textContent = serialCode ? `Mini leaderboard \u2014 D\xE9fi amis ${serialCode}` : "Mini leaderboard \u2014 D\xE9fi amis";
+    const creatorLabel = getFriendChallengeCreatorLabel(activeFriendChallenge);
+    if (serialCode && creatorLabel) {
+      title.textContent = `Mini leaderboard \u2014 D\xE9fi amis ${serialCode} \xB7 ${creatorLabel}`;
+    } else if (serialCode) {
+      title.textContent = `Mini leaderboard \u2014 D\xE9fi amis ${serialCode}`;
+    } else if (creatorLabel) {
+      title.textContent = `Mini leaderboard \u2014 D\xE9fi amis \xB7 ${creatorLabel}`;
+    } else {
+      title.textContent = "Mini leaderboard \u2014 D\xE9fi amis";
+    }
     slot.appendChild(title);
     const meta = document.createElement("p");
     meta.className = "friend-challenge-board-meta";
@@ -4991,6 +5030,16 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
           infoMessage: (payload == null ? void 0 : payload.error) || "Mini leaderboard indisponible pour le moment."
         });
         return;
+      }
+      const payloadChallenge = normalizeFriendChallengePayload(payload == null ? void 0 : payload.challenge);
+      if (payloadChallenge && activeFriendChallenge && payloadChallenge.code === challengeCode && activeFriendChallenge.code === challengeCode) {
+        activeFriendChallenge = {
+          ...activeFriendChallenge,
+          serialNumber: payloadChallenge.serialNumber || activeFriendChallenge.serialNumber,
+          serialCode: payloadChallenge.serialCode || activeFriendChallenge.serialCode,
+          createdBy: payloadChallenge.createdBy || activeFriendChallenge.createdBy || null
+        };
+        updateFriendChallengeToggleUI();
       }
       renderFriendChallengeMiniBoard({ rows: Array.isArray(payload == null ? void 0 : payload.rows) ? payload.rows : [] });
     } catch (error) {
