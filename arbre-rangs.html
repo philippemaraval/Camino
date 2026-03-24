@@ -329,8 +329,9 @@
 
     .mode-grid {
       display: flex;
-      gap: 8px;
-      justify-content: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      width: 100%;
     }
 
     .mode-card {
@@ -339,7 +340,7 @@
       padding: 4px;
       background: rgba(245, 248, 255, 0.9);
       min-height: 54px;
-      width: 92px;
+      width: 138px;
       flex: 0 0 auto;
     }
 
@@ -409,6 +410,20 @@
       background: linear-gradient(90deg, #2f67cf 0%, #23895d 100%);
     }
 
+    .touriste-panel {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 12px;
+      color: var(--text-secondary);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .touriste-panel strong {
+      color: var(--brand-sea-900);
+    }
+
     .status-box {
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
@@ -467,7 +482,12 @@
       }
 
       .mode-grid {
-        justify-content: center;
+        gap: 8px;
+      }
+
+      .mode-card {
+        width: calc((100% - 16px) / 3);
+        min-width: 0;
       }
 
       .rank-tab {
@@ -794,15 +814,39 @@
         if (progress.hasConditions) {
           globalLine.textContent = `Avancement global vers ${targetRank.label}: ${progress.doneTotal}/${progress.total} (${pct}%)`;
         } else {
-          globalLine.textContent = "Rang de départ: aucune condition requise.";
+          globalLine.textContent = "Rang de départ sélectionné.";
         }
         globalLine.classList.remove("hidden");
 
         document.getElementById("overview-label").textContent = progress.hasConditions
           ? `Conditions à atteindre pour ${targetRank.label}`
-          : "Conditions à atteindre";
-        document.getElementById("overview-count").textContent = `${progress.doneTotal}/${progress.total}`;
+          : "Rang de départ";
+        document.getElementById("overview-count").textContent = progress.hasConditions
+          ? `${progress.doneTotal}/${progress.total}`
+          : "—";
         document.getElementById("overview-bar-fill").style.width = `${progress.hasConditions ? pct : 0}%`;
+
+        if (!progress.hasConditions) {
+          const tree = document.getElementById("tree");
+          tree.innerHTML = `
+            <div class="tree-target-row desktop-only">
+              <div class="rank-node rank-node--target">${escapeHtml(targetRank.label)}</div>
+            </div>
+            <div class="rank-pair-mobile">
+              <div class="rank-node rank-node--current">${escapeHtml(currentRank.label)}</div>
+              <span class="rank-pair-arrow" aria-hidden="true">→</span>
+              <div class="rank-node rank-node--target">${escapeHtml(targetRank.label)}</div>
+            </div>
+            <div class="touriste-panel">
+              <strong>Touriste</strong> est le niveau d'entrée: aucune condition à valider ici.
+              <br>
+              Clique sur <strong>Minot</strong> dans la barre des rangs pour voir les 15 conditions à atteindre.
+            </div>`;
+
+          document.getElementById("status-box").classList.add("hidden");
+          document.getElementById("progress-root").classList.remove("hidden");
+          return;
+        }
 
         const zonesHtml = progress.zones.map((zone) => {
           const modesHtml = zone.modes.map((mode) => {
