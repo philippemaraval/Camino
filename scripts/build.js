@@ -23,6 +23,7 @@ const DIST_INCLUDE = [
   "_headers",
   "googlee4a7e2d5ea351f02.html",
   "index.html",
+  "arbre-rangs.html",
   "regles.html",
   "main.js",
   "main.js.map",

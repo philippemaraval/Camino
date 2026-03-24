@@ -4264,7 +4264,6 @@ function loadProfile() {
     gameLabels: GAME_LABELS,
     hasReachedGlobalRank,
     hasReachedVilleRank,
-    getTitleThresholds,
     initAvatarSelector,
     onProfileRendered: initDailyReminderControls,
     onAuthFailure: () => {
