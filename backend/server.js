@@ -1281,12 +1281,48 @@ app.put('/api/editor/lists', authenticateToken, requireContentEditor, asyncHandl
         mainStreets: normalizeNameList(req.body.mainStreets),
         monuments: normalizeNameList(req.body.monuments),
     };
+
+    const currentMonuments = await getEffectiveMonumentEntries();
+    const currentMonumentsByName = new Map(
+        currentMonuments.map((entry) => [entry.normalizedName, entry]),
+    );
+    const defaultMonumentsByName = new Map(
+        (Array.isArray(DEFAULT_CONTENT_SNAPSHOT.monuments) ? DEFAULT_CONTENT_SNAPSHOT.monuments : [])
+            .map((entry) => [entry.normalizedName, entry]),
+    );
+    let monumentsSettingUpdated = false;
+    for (const normalizedMonumentName of lists.monuments) {
+        if (currentMonumentsByName.has(normalizedMonumentName)) {
+            continue;
+        }
+        const fallbackEntry = defaultMonumentsByName.get(normalizedMonumentName);
+        if (!fallbackEntry) {
+            continue;
+        }
+        currentMonuments.push({
+            name: fallbackEntry.name,
+            normalizedName: fallbackEntry.normalizedName,
+            longitude: fallbackEntry.longitude,
+            latitude: fallbackEntry.latitude,
+        });
+        currentMonumentsByName.set(normalizedMonumentName, fallbackEntry);
+        monumentsSettingUpdated = true;
+    }
+
+    if (monumentsSettingUpdated) {
+        await db.setAppSetting(
+            CONTENT_MONUMENTS_SETTING_KEY,
+            JSON.stringify(serializeMonumentEntries(currentMonuments)),
+        );
+    }
+
     await db.setAppSetting(CONTENT_LISTS_SETTING_KEY, JSON.stringify(lists));
 
     const streetInfos = await getEffectiveStreetInfos();
     return res.json({
         success: true,
         lists,
+        monuments: serializeMonumentEntries(currentMonuments),
         stats: computeContentStats(streetInfos, lists),
     });
 }));
