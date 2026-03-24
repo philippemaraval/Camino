@@ -512,40 +512,43 @@ export function handleDailyShareImageRuntime({
     return drawCount;
   }
 
-  function drawCoverImage(context, image, frame, radius = 16) {
+  function drawContainedImage(context, image, frame, radius = 16) {
     if (!image || !image.naturalWidth || !image.naturalHeight) {
       return;
     }
 
+    const framePadding = 8;
+    const availableWidth = Math.max(1, frame.w - framePadding * 2);
+    const availableHeight = Math.max(1, frame.h - framePadding * 2);
     const imageRatio = image.naturalWidth / image.naturalHeight;
-    const frameRatio = frame.w / frame.h;
-    let sourceWidth = image.naturalWidth;
-    let sourceHeight = image.naturalHeight;
-    let sourceX = 0;
-    let sourceY = 0;
+    const frameRatio = availableWidth / availableHeight;
+    let drawWidth = availableWidth;
+    let drawHeight = availableHeight;
 
     if (imageRatio > frameRatio) {
-      sourceWidth = image.naturalHeight * frameRatio;
-      sourceX = (image.naturalWidth - sourceWidth) / 2;
+      drawHeight = availableWidth / imageRatio;
     } else {
-      sourceHeight = image.naturalWidth / frameRatio;
-      sourceY = (image.naturalHeight - sourceHeight) / 2;
+      drawWidth = availableHeight * imageRatio;
     }
+
+    const drawX = frame.x + (frame.w - drawWidth) / 2;
+    const drawY = frame.y + (frame.h - drawHeight) / 2;
 
     context.save();
     context.beginPath();
     context.roundRect(frame.x, frame.y, frame.w, frame.h, radius);
     context.clip();
+    const frameGradient = context.createLinearGradient(frame.x, frame.y, frame.x, frame.y + frame.h);
+    frameGradient.addColorStop(0, "rgba(15,23,42,0.9)");
+    frameGradient.addColorStop(1, "rgba(30,41,59,0.88)");
+    context.fillStyle = frameGradient;
+    context.fillRect(frame.x, frame.y, frame.w, frame.h);
     context.drawImage(
       image,
-      sourceX,
-      sourceY,
-      sourceWidth,
-      sourceHeight,
-      frame.x,
-      frame.y,
-      frame.w,
-      frame.h,
+      drawX,
+      drawY,
+      drawWidth,
+      drawHeight,
     );
     context.restore();
   }
@@ -640,11 +643,13 @@ export function handleDailyShareImageRuntime({
 
   const rowsStartY = 610;
   const rowHeight = 74;
+  const photoPanelTop = rowsStartY + 2 * (rowHeight + 12) - 6;
+  const photoPanelBottomInset = 70;
   const photoPanel = {
     x: centerX + 20,
-    y: rowsStartY + 2 * (rowHeight + 12) - 6,
+    y: photoPanelTop,
     w: panel.x + panel.w - 70 - (centerX + 20),
-    h: 3 * (rowHeight + 12) + 12,
+    h: Math.max(320, panel.y + panel.h - photoPanelTop - photoPanelBottomInset),
   };
   const rowX = panel.x + 70;
   const rowRightLimit = photoPanel.x - 20;
@@ -709,11 +714,14 @@ export function handleDailyShareImageRuntime({
   ctx.stroke();
 
   const bestCenterX = photoPanel.x + photoPanel.w / 2;
+  const photoHostY = photoPanel.y + photoPanel.h - 24;
+  const photoTryAgainY = photoHostY - 32;
+  const photoDistanceY = photoTryAgainY - 32;
   const photoFrame = {
     x: photoPanel.x + 20,
-    y: photoPanel.y + 52,
+    y: photoPanel.y + 58,
     w: photoPanel.w - 40,
-    h: 148,
+    h: Math.max(140, photoPanel.h - 190),
   };
   ctx.textAlign = "center";
   ctx.fillStyle = "#f8fafc";
@@ -741,12 +749,12 @@ export function handleDailyShareImageRuntime({
 
   ctx.fillStyle = "#cbd5e1";
   ctx.font = '500 22px "Nunito", "Avenir Next", "Segoe UI", sans-serif';
-  ctx.fillText(`🎯 Meilleure distance: ${bestDistanceLabel}`, bestCenterX, photoPanel.y + 236);
-  ctx.fillText("Essaie de faire mieux sur", bestCenterX, photoPanel.y + 268);
+  ctx.fillText(`🎯 Meilleure distance: ${bestDistanceLabel}`, bestCenterX, photoDistanceY);
+  ctx.fillText("Essaie de faire mieux sur", bestCenterX, photoTryAgainY);
 
   ctx.fillStyle = "#93c5fd";
   ctx.font = '700 24px "Nunito", "Avenir Next", "Segoe UI", sans-serif';
-  ctx.fillText("camino-ajm.pages.dev", bestCenterX, photoPanel.y + 300);
+  ctx.fillText("camino-ajm.pages.dev", bestCenterX, photoHostY);
 
   const finalizeShareImage = () => {
     canvas.toBlob(async (blob) => {
@@ -797,7 +805,7 @@ export function handleDailyShareImageRuntime({
     const dailyImage = new Image();
     dailyImage.decoding = "async";
     dailyImage.onload = () => {
-      drawCoverImage(ctx, dailyImage, photoFrame, 14);
+      drawContainedImage(ctx, dailyImage, photoFrame, 14);
       ctx.strokeStyle = "rgba(226,232,240,0.75)";
       ctx.lineWidth = 1.8;
       ctx.beginPath();
