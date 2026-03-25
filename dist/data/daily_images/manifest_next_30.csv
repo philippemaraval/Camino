@@ -1,31 +1,100 @@
-date,street_name,quartier,file_name
-2026-03-25,Impasse Gardey,SAINT-GINIEZ,2026-03-25__impasse-gardey.jpg
-2026-03-26,Rue George Charpak,CHATEAU-GOMBERT,2026-03-26__rue-george-charpak.jpg
-2026-03-27,Impasse Cherenton,ROUCAS-BLANC,2026-03-27__impasse-cherenton.jpg
-2026-03-28,Rue Victoria Marino,SORMIOU,2026-03-28__rue-victoria-marino.jpg
-2026-03-29,Impasse des Fauvettes,LA MILLIERE,2026-03-29__impasse-des-fauvettes.jpg
-2026-03-30,Boulevard Guigou,CHUTES-LAVIE,2026-03-30__boulevard-guigou.jpg
-2026-03-31,Rue Boisselot,BON-SECOURS,2026-03-31__rue-boisselot.jpg
-2026-04-01,Rue du Rhône,PERIER,2026-04-01__rue-du-rhone.jpg
-2026-04-02,Avenue Arthur Scott,MENPENTI,2026-04-02__avenue-arthur-scott.jpg
-2026-04-03,Rue Dragon,VAUBAN,2026-04-03__rue-dragon.jpg
-2026-04-04,Impasse Nouveau,BOMPARD,2026-04-04__impasse-nouveau.jpg
-2026-04-05,Avenue Yves Giraud,VERDURON,2026-04-05__avenue-yves-giraud.jpg
-2026-04-06,Rue Louis Merlino,BON-SECOURS,2026-04-06__rue-louis-merlino.jpg
-2026-04-07,Rue Audric,SAINT-BARNABE,2026-04-07__rue-audric.jpg
-2026-04-08,Chemin de la Clue,LA TREILLE,2026-04-08__chemin-de-la-clue.jpg
-2026-04-09,Rue Puits du Denier,GRANDS-CARMES,2026-04-09__rue-puits-du-denier.jpg
-2026-04-10,Rue Raphaël Ponson,SAINT-GINIEZ,2026-04-10__rue-raphael-ponson.jpg
-2026-04-11,Rue du Plateau,SAINT-LAMBERT,2026-04-11__rue-du-plateau.jpg
-2026-04-12,Boulevard Gustave Ganay,SAINTE MARGUERITE,2026-04-12__boulevard-gustave-ganay.jpg
-2026-04-13,Avenue du Corps Expéditionnaire Français,SAINT-LOUP,2026-04-13__avenue-du-corps-expeditionnaire-francais.jpg
-2026-04-14,Avenue Campagne Barielle,SAINT-MITRE,2026-04-14__avenue-campagne-barielle.jpg
-2026-04-15,Rue Saint-François de Sales,LA BLANCARDE,2026-04-15__rue-saint-francois-de-sales.jpg
-2026-04-16,Rue Henri Tasso,HOTEL DE VILLE,2026-04-16__rue-henri-tasso.jpg
-2026-04-17,Avenue de la Campane,MONTOLIVET,2026-04-17__avenue-de-la-campane.jpg
-2026-04-18,Place Thiars,OPERA,2026-04-18__place-thiars.jpg
-2026-04-19,Rue Pierre Doize,SAINT-LOUP,2026-04-19__rue-pierre-doize.jpg
-2026-04-20,Rond-Point La Michelle,CHATEAU-GOMBERT,2026-04-20__rond-point-la-michelle.jpg
-2026-04-21,Impasse de l'Église,ENDOUME,2026-04-21__impasse-de-leglise.jpg
-2026-04-22,Impasse Narcisse,L'ESTAQUE,2026-04-22__impasse-narcisse.jpg
-2026-04-23,Rue Ernest Renan,BAILLE,2026-04-23__rue-ernest-renan.jpg
+date,street_name,quartier,file_name,missing_image_street
+2026-03-25,Impasse Gardey,SAINT-GINIEZ,2026-03-25__impasse-gardey.jpg,
+2026-03-26,Rue George Charpak,CHATEAU-GOMBERT,2026-03-26__rue-george-charpak.jpg,
+2026-03-27,Impasse Cherenton,ROUCAS-BLANC,2026-03-27__impasse-cherenton.jpg,Impasse Cherenton
+2026-03-28,Rue Victoria Marino,SORMIOU,2026-03-28__rue-victoria-marino.jpg,
+2026-03-29,Impasse des Fauvettes,LA MILLIERE,2026-03-29__impasse-des-fauvettes.jpg,
+2026-03-30,Boulevard Guigou,CHUTES-LAVIE,2026-03-30__boulevard-guigou.jpg,
+2026-03-31,Rue Boisselot,BON-SECOURS,2026-03-31__rue-boisselot.jpg,
+2026-04-01,Rue du Rhône,PERIER,2026-04-01__rue-du-rhone.jpg,
+2026-04-02,Avenue Arthur Scott,MENPENTI,2026-04-02__avenue-arthur-scott.jpg,
+2026-04-03,Rue Dragon,VAUBAN,2026-04-03__rue-dragon.jpg,
+2026-04-04,Impasse Nouveau,BOMPARD,2026-04-04__impasse-nouveau.jpg,
+2026-04-05,Avenue Yves Giraud,VERDURON,2026-04-05__avenue-yves-giraud.jpg,
+2026-04-06,Rue Louis Merlino,BON-SECOURS,2026-04-06__rue-louis-merlino.jpg,
+2026-04-07,Rue Audric,SAINT-BARNABE,2026-04-07__rue-audric.jpg,
+2026-04-08,Chemin de la Clue,LA TREILLE,2026-04-08__chemin-de-la-clue.jpg,
+2026-04-09,Rue Puits du Denier,GRANDS-CARMES,2026-04-09__rue-puits-du-denier.jpg,
+2026-04-10,Rue Raphaël Ponson,SAINT-GINIEZ,2026-04-10__rue-raphael-ponson.jpg,
+2026-04-11,Rue du Plateau,SAINT-LAMBERT,2026-04-11__rue-du-plateau.jpg,
+2026-04-12,Boulevard Gustave Ganay,SAINTE MARGUERITE,2026-04-12__boulevard-gustave-ganay.jpg,
+2026-04-13,Avenue du Corps Expéditionnaire Français,SAINT-LOUP,2026-04-13__avenue-du-corps-expeditionnaire-francais.jpg,
+2026-04-14,Avenue Campagne Barielle,SAINT-MITRE,2026-04-14__avenue-campagne-barielle.jpg,
+2026-04-15,Rue Saint-François de Sales,LA BLANCARDE,2026-04-15__rue-saint-francois-de-sales.jpg,
+2026-04-16,Rue Henri Tasso,HOTEL DE VILLE,2026-04-16__rue-henri-tasso.jpg,
+2026-04-17,Avenue de la Campane,MONTOLIVET,2026-04-17__avenue-de-la-campane.jpg,
+2026-04-18,Place Thiars,OPERA,2026-04-18__place-thiars.jpg,
+2026-04-19,Rue Pierre Doize,SAINT-LOUP,2026-04-19__rue-pierre-doize.jpg,
+2026-04-20,Rond-Point La Michelle,CHATEAU-GOMBERT,2026-04-20__rond-point-la-michelle.jpg,
+2026-04-21,Impasse de l'Église,ENDOUME,2026-04-21__impasse-de-leglise.jpg,
+2026-04-22,Impasse Narcisse,L'ESTAQUE,2026-04-22__impasse-narcisse.jpg,
+2026-04-23,Rue Ernest Renan,BAILLE,2026-04-23__rue-ernest-renan.jpg,
+2026-04-24,Avenue César Baldaccini,LE CABOT,2026-04-24__avenue-cesar-baldaccini.jpg,Avenue César Baldaccini
+2026-04-25,Rue Chicot,SAINT-BARNABE,2026-04-25__rue-chicot.jpg,
+2026-04-26,Place Dassy,SAINT-JUST,2026-04-26__place-dassy.jpg,
+2026-04-27,Avenue d'Air Bel,LA POMME,2026-04-27__avenue-dair-bel.jpg,
+2026-04-28,Boulevard Élysée Reclus,LES CHARTREUX,2026-04-28__boulevard-elysee-reclus.jpg,
+2026-04-29,Rue Léo Lagrange,LE CANET,2026-04-29__rue-leo-lagrange.jpg,
+2026-04-30,Passage du Pataclet,L'ESTAQUE,2026-04-30__passage-du-pataclet.jpg,
+2026-05-01,Impasse du Pistou,SORMIOU,2026-05-01__impasse-du-pistou.jpg,
+2026-05-02,Allée Murillo,POINTE ROUGE,2026-05-02__allee-murillo.jpg,
+2026-05-03,Boulevard du Bosphore,SAINT-ANTOINE,2026-05-03__boulevard-du-bosphore.jpg,
+2026-05-04,Avenue Paul Chausy,PONT-DE-VIVAUX,2026-05-04__avenue-paul-chausy.jpg,
+2026-05-05,Avenue Louis Malosse,LES CAILLOLS,2026-05-05__avenue-louis-malosse.jpg,
+2026-05-06,Impasse Dejanire,SAINT-MENET,2026-05-06__impasse-dejanire.jpg,
+2026-05-07,Rue du Jeune Anacharsis,OPERA,2026-05-07__rue-du-jeune-anacharsis.jpg,
+2026-05-08,Impasse Boissin,SAINT-LAMBERT,2026-05-08__impasse-boissin.jpg,
+2026-05-09,Boulevard Jacques Saadé Quai d'Arenc,ARENC,2026-05-09__boulevard-jacques-saade-quai-darenc.jpg,
+2026-05-10,Boulevard Louis Prade,SAINT-JOSEPH,2026-05-10__boulevard-louis-prade.jpg,
+2026-05-11,Traverse Escudelier,LA CABUCELLE,2026-05-11__traverse-escudelier.jpg,
+2026-05-12,L2 Est,SAINT-BARNABE,2026-05-12__l2-est.jpg,
+2026-05-13,Place Maurice Thouvenin,LA TREILLE,2026-05-13__place-maurice-thouvenin.jpg,Place Maurice Thouvenin
+2026-05-14,Rue de La Loubière,NOTRE-DAME-DU-MONT,2026-05-14__rue-de-la-loubiere.jpg,Rue de La Loubière
+2026-05-15,Impasse de l'Escalette,LES GOUDES,2026-05-15__impasse-de-lescalette.jpg,Impasse de l'Escalette
+2026-05-16,Rue Edouard Alexander,LA CAPELETTE,2026-05-16__rue-edouard-alexander.jpg,Rue Edouard Alexander
+2026-05-17,Allée du Bois,LA DELORME,2026-05-17__allee-du-bois.jpg,Allée du Bois
+2026-05-18,Impasse Notre-Dame,LA ROSE,2026-05-18__impasse-notre-dame.jpg,Impasse Notre-Dame
+2026-05-19,Rue de la Chartreuse,LES CHARTREUX,2026-05-19__rue-de-la-chartreuse.jpg,Rue de la Chartreuse
+2026-05-20,Boulevard Jean Duplessis,LE CANET,2026-05-20__boulevard-jean-duplessis.jpg,Boulevard Jean Duplessis
+2026-05-21,Corniche Marius,MONTREDON,2026-05-21__corniche-marius.jpg,Corniche Marius
+2026-05-22,Impasse des 4 Portails,LA CAPELETTE,2026-05-22__impasse-des-4-portails.jpg,Impasse des 4 Portails
+2026-05-23,Square Gustave Ganay,SAINTE MARGUERITE,2026-05-23__square-gustave-ganay.jpg,Square Gustave Ganay
+2026-05-24,Rue Louis Lanata,SAINT-ANDRE,2026-05-24__rue-louis-lanata.jpg,Rue Louis Lanata
+2026-05-25,Allée des Arbousiers,LA MILLIERE,2026-05-25__allee-des-arbousiers.jpg,Allée des Arbousiers
+2026-05-26,Impasse des Aurengues,LES OLIVES,2026-05-26__impasse-des-aurengues.jpg,Impasse des Aurengues
+2026-05-27,Chemin Huveaune,SAINT-GINIEZ,2026-05-27__chemin-huveaune.jpg,Chemin Huveaune
+2026-05-28,Rue Guy Fabre,SAINT-CHARLES,2026-05-28__rue-guy-fabre.jpg,Rue Guy Fabre
+2026-05-29,Allée de la Veuve Perrin,PREFECTURE,2026-05-29__allee-de-la-veuve-perrin.jpg,Allée de la Veuve Perrin
+2026-05-30,Rue Larbi Benbarek,LES CROTTES,2026-05-30__rue-larbi-benbarek.jpg,Rue Larbi Benbarek
+2026-05-31,Rue Yann de l'Écotais,LES BAUMETTES,2026-05-31__rue-yann-de-lecotais.jpg,Rue Yann de l'Écotais
+2026-06-01,Traverse du Jas de Serre,LES MOURETS,2026-06-01__traverse-du-jas-de-serre.jpg,Traverse du Jas de Serre
+2026-06-02,Square Paul Arène,SAINT-BARNABE,2026-06-02__square-paul-arene.jpg,Square Paul Arène
+2026-06-03,Boulevard Louis Frangin,SAINT-PIERRE,2026-06-03__boulevard-louis-frangin.jpg,Boulevard Louis Frangin
+2026-06-04,Impasse Cas,LA BLANCARDE,2026-06-04__impasse-cas.jpg,Impasse Cas
+2026-06-05,Boulevard de la Grotte Rolland,MONTREDON,2026-06-05__boulevard-de-la-grotte-rolland.jpg,Boulevard de la Grotte Rolland
+2026-06-06,Traverse Trébuchet,SAINT-HENRI,2026-06-06__traverse-trebuchet.jpg,Traverse Trébuchet
+2026-06-07,Traverse des Partisans,LES OLIVES,2026-06-07__traverse-des-partisans.jpg,Traverse des Partisans
+2026-06-08,Traverse du Mazout,LA DELORME,2026-06-08__traverse-du-mazout.jpg,Traverse du Mazout
+2026-06-09,Traverse Durbecs,MONTOLIVET,2026-06-09__traverse-durbecs.jpg,Traverse Durbecs
+2026-06-10,Impasse Bleue,BELLE-DE-MAI,2026-06-10__impasse-bleue.jpg,Impasse Bleue
+2026-06-11,Boulevard de la Petite Rente,SAINT-MARCEL,2026-06-11__boulevard-de-la-petite-rente.jpg,Boulevard de la Petite Rente
+2026-06-12,Boulevard Fabrici,SAINT-PIERRE,2026-06-12__boulevard-fabrici.jpg,Boulevard Fabrici
+2026-06-13,Avenue Rimbaud,LES BAUMETTES,2026-06-13__avenue-rimbaud.jpg,Avenue Rimbaud
+2026-06-14,Allée du Béarn,LA DELORME,2026-06-14__allee-du-bearn.jpg,Allée du Béarn
+2026-06-15,Chemin du Cavaou,LES MEDECINS,2026-06-15__chemin-du-cavaou.jpg,Chemin du Cavaou
+2026-06-16,Impasse du Collet,SAINT-MAURONT,2026-06-16__impasse-du-collet.jpg,Impasse du Collet
+2026-06-17,Rue Boisseau,SAINT-ANDRE,2026-06-17__rue-boisseau.jpg,Rue Boisseau
+2026-06-18,Traverse de la Solitude,LA MILLIERE,2026-06-18__traverse-de-la-solitude.jpg,Traverse de la Solitude
+2026-06-19,Rue Armand Bédarride,NOTRE-DAME-DU-MONT,2026-06-19__rue-armand-bedarride.jpg,Rue Armand Bédarride
+2026-06-20,Avenue Siebel,MONTOLIVET,2026-06-20__avenue-siebel.jpg,Avenue Siebel
+2026-06-21,Chemin de la Grave,CHATEAU-GOMBERT,2026-06-21__chemin-de-la-grave.jpg,Chemin de la Grave
+2026-06-22,Impasse Dominique,SAINT-LOUIS,2026-06-22__impasse-dominique.jpg,Impasse Dominique
+2026-06-23,Impasse Fernand Karabadjakian,SORMIOU,2026-06-23__impasse-fernand-karabadjakian.jpg,Impasse Fernand Karabadjakian
+2026-06-24,Traverse de la Haute Granière,LA VALBARELLE,2026-06-24__traverse-de-la-haute-graniere.jpg,Traverse de la Haute Granière
+2026-06-25,Boulevard Bompard,BOMPARD,2026-06-25__boulevard-bompard.jpg,Boulevard Bompard
+2026-06-26,Boulevard Louis Botinelly,LA BLANCARDE,2026-06-26__boulevard-louis-botinelly.jpg,Boulevard Louis Botinelly
+2026-06-27,Avenue des Renoncules,SAINT-JUST,2026-06-27__avenue-des-renoncules.jpg,Avenue des Renoncules
+2026-06-28,Impasse du Golfe,LA CABUCELLE,2026-06-28__impasse-du-golfe.jpg,Impasse du Golfe
+2026-06-29,Rue Charles Plumier,LA JOLIETTE,2026-06-29__rue-charles-plumier.jpg,Rue Charles Plumier
+2026-06-30,Passage Jean-Baptiste Garibaldi,SAINT-PIERRE,2026-06-30__passage-jean-baptiste-garibaldi.jpg,Passage Jean-Baptiste Garibaldi
+2026-07-01,Ancien Sentier Muletier,SORMIOU,2026-07-01__ancien-sentier-muletier.jpg,Ancien Sentier Muletier

@@ -11,7 +11,7 @@ Regles de slug :
 - caracteres non alphanumeriques remplaces par `-`
 - tirets consecutifs compresses
 
-Reference des 30 prochains Daily :
+Reference des prochains Daily :
 - `manifest_next_30.csv`
 
 Depot des images :
