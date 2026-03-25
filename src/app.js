@@ -1895,16 +1895,70 @@ function setLectureStreetSearchVisible(e, t = !1) {
     !0 !== t &&
     ((input.value = ""), input.blur()));
 }
+function getLectureSearchCopy(e = getZoneMode()) {
+  if ("monuments" === e)
+    return {
+      placeholder: "Rechercher un monument (nom ou mot)",
+      unavailable: "Aucun monument disponible pour cette zone.",
+      notFound: "Monument introuvable dans la zone actuelle.",
+      noResults: "Aucun monument trouvé.",
+      srLabel: "Rechercher un monument",
+    };
+  if ("quartiers-ville" === e)
+    return {
+      placeholder: "Rechercher un quartier (nom ou mot)",
+      unavailable: "Aucun quartier disponible pour cette zone.",
+      notFound: "Quartier introuvable dans la zone actuelle.",
+      noResults: "Aucun quartier trouvé.",
+      srLabel: "Rechercher un quartier",
+    };
+  return {
+    placeholder: "Rechercher une rue (nom ou mot)",
+    unavailable: "Aucune rue disponible pour cette zone.",
+    notFound: "Rue introuvable dans la zone actuelle.",
+    noResults: "Aucune rue trouvée.",
+    srLabel: "Rechercher une rue",
+  };
+}
+function focusMonumentByName(e) {
+  const t = findMonumentLayerByName(e);
+  if (!t) return null;
+  if ("function" == typeof t.getLatLng && map) {
+    const e = t.getLatLng();
+    e && map.flyTo(e, Math.max(map.getZoom(), 15), { animate: !0, duration: 1.2 });
+  }
+  return highlightMonument(t, UI_THEME.mapStreetHover), t;
+}
+function focusLectureSearchResultByName(e) {
+  if (!e) return null;
+  if ("monuments" === getZoneMode()) return focusMonumentByName(e);
+  if ("quartiers-ville" === getZoneMode()) return focusQuartierByName(e);
+  const t = focusStreetByName(e);
+  if (!t) return null;
+  return t.feature && showStreetInfo(t.feature), t;
+}
 function buildLectureStreetSearchIndex() {
-  if ("monuments" === getZoneMode() || "quartiers-ville" === getZoneMode())
-    return void (lectureStreetSearchIndex = []);
-  const e = buildUniqueStreetList(getCurrentZoneStreets()),
-    t = new Set();
+  let e = [];
+  if ("monuments" === getZoneMode())
+    e = allMonuments
+      .map((e) =>
+        "string" == typeof e?.properties?.name ? e.properties.name.trim() : "",
+      )
+      .filter((e) => !!e);
+  else if ("quartiers-ville" === getZoneMode())
+    e = allQuartierFeatures
+      .map((e) => getQuartierTargetName(e))
+      .filter((e) => !!e);
+  else {
+    const t = buildUniqueStreetList(getCurrentZoneStreets());
+    e = t
+      .map((e) =>
+        "string" == typeof e?.properties?.name ? e.properties.name.trim() : "",
+      )
+      .filter((e) => !!e);
+  }
+  const t = new Set();
   lectureStreetSearchIndex = e
-    .map((e) =>
-      "string" == typeof e?.properties?.name ? e.properties.name.trim() : "",
-    )
-    .filter((e) => !!e)
     .filter((e) => {
       const r = normalizeSearchText(e);
       return !!r && (!t.has(r) && (t.add(r), !0));
@@ -1944,10 +1998,11 @@ function renderLectureStreetSearchResults(e) {
   const { results } = getLectureSearchElements();
   if (!results) return;
   if (!e || 0 === e.length) {
+    const t = getLectureSearchCopy();
     const e = document.createElement("div");
     return (
       (e.className = "lecture-search-empty"),
-      (e.textContent = "Aucune rue trouvée."),
+      (e.textContent = t.noResults),
       (results.innerHTML = ""),
       results.appendChild(e),
       void results.classList.remove("hidden")
@@ -1967,9 +2022,10 @@ function renderLectureStreetSearchResults(e) {
     results.classList.remove("hidden"));
 }
 function focusLectureStreetBySearchName(e) {
+  const t = getLectureSearchCopy();
   if (!e) return;
-  const t = focusStreetByName(e);
-  if (!t) return void showMessage("Rue introuvable dans la zone actuelle.", "error");
+  const r = focusLectureSearchResultByName(e);
+  if (!r) return void showMessage(t.notFound, "error");
   const { input } = getLectureSearchElements();
   (input && (input.value = e), closeLectureStreetSearchResults());
 }
@@ -1984,21 +2040,19 @@ function updateLectureStreetSearchResults() {
 }
 function refreshLectureStreetSearchForCurrentMode(e = {}) {
   const t = !0 === e.preserveQuery,
-    r =
-      isLectureMode &&
-      "monuments" !== getZoneMode() &&
-      "quartiers-ville" !== getZoneMode(),
+    r = isLectureMode,
+    a = getLectureSearchCopy(),
     { input } = getLectureSearchElements();
   if (!r)
     return void setLectureStreetSearchVisible(!1, t);
+  const n = document.querySelector('label[for="lecture-search-input"]');
+  n && (n.textContent = a.srLabel);
   (setLectureStreetSearchVisible(!0, t),
     buildLectureStreetSearchIndex(),
     input &&
     ((input.disabled = 0 === lectureStreetSearchIndex.length),
-      (input.placeholder =
-        0 === lectureStreetSearchIndex.length
-          ? "Aucune rue disponible pour cette zone"
-          : "Rechercher une rue (nom ou mot)"),
+      input.setAttribute("aria-label", a.srLabel),
+      (input.placeholder = 0 === lectureStreetSearchIndex.length ? a.unavailable : a.placeholder),
       t && input.value.trim() && lectureStreetSearchIndex.length > 0
         ? updateLectureStreetSearchResults()
         : closeLectureStreetSearchResults()));
@@ -2021,17 +2075,18 @@ function initLectureStreetSearch() {
       if ("Enter" === e.key) {
         e.preventDefault();
         const t = input.value.trim();
+        const r = getLectureSearchCopy();
         if (!t) return;
         if (0 === lectureStreetSearchIndex.length)
-          return void showMessage("Aucune rue disponible pour cette zone.", "warning");
+          return void showMessage(r.unavailable, "warning");
         0 === lectureStreetSearchMatches.length &&
           (lectureStreetSearchMatches = findLectureStreetMatches(t));
-        const r =
+        const a =
           lectureStreetSearchMatches[0] ||
           lectureStreetSearchIndex.find((e) => e.normalized === normalizeSearchText(t));
-        r
-          ? focusLectureStreetBySearchName(r.name)
-          : showMessage("Rue introuvable dans la zone actuelle.", "error");
+        a
+          ? focusLectureStreetBySearchName(a.name)
+          : showMessage(r.notFound, "error");
       }
     }),
     document.addEventListener("click", (e) => {

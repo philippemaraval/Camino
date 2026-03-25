@@ -5356,16 +5356,70 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     }
     container.classList.add("hidden"), target.classList.remove("hidden"), closeLectureStreetSearchResults(), input && true !== t && (input.value = "", input.blur());
   }
+  function getLectureSearchCopy(e = getZoneMode()) {
+    if ("monuments" === e)
+      return {
+        placeholder: "Rechercher un monument (nom ou mot)",
+        unavailable: "Aucun monument disponible pour cette zone.",
+        notFound: "Monument introuvable dans la zone actuelle.",
+        noResults: "Aucun monument trouv\xE9.",
+        srLabel: "Rechercher un monument"
+      };
+    if ("quartiers-ville" === e)
+      return {
+        placeholder: "Rechercher un quartier (nom ou mot)",
+        unavailable: "Aucun quartier disponible pour cette zone.",
+        notFound: "Quartier introuvable dans la zone actuelle.",
+        noResults: "Aucun quartier trouv\xE9.",
+        srLabel: "Rechercher un quartier"
+      };
+    return {
+      placeholder: "Rechercher une rue (nom ou mot)",
+      unavailable: "Aucune rue disponible pour cette zone.",
+      notFound: "Rue introuvable dans la zone actuelle.",
+      noResults: "Aucune rue trouv\xE9e.",
+      srLabel: "Rechercher une rue"
+    };
+  }
+  function focusMonumentByName(e) {
+    const t = findMonumentLayerByName(e);
+    if (!t) return null;
+    if ("function" == typeof t.getLatLng && map) {
+      const e2 = t.getLatLng();
+      e2 && map.flyTo(e2, Math.max(map.getZoom(), 15), { animate: true, duration: 1.2 });
+    }
+    return highlightMonument(t, UI_THEME.mapStreetHover), t;
+  }
+  function focusLectureSearchResultByName(e) {
+    if (!e) return null;
+    if ("monuments" === getZoneMode()) return focusMonumentByName(e);
+    if ("quartiers-ville" === getZoneMode()) return focusQuartierByName(e);
+    const t = focusStreetByName(e);
+    if (!t) return null;
+    return t.feature && showStreetInfo(t.feature), t;
+  }
   function buildLectureStreetSearchIndex() {
-    if ("monuments" === getZoneMode() || "quartiers-ville" === getZoneMode())
-      return void (lectureStreetSearchIndex = []);
-    const e = buildUniqueStreetList2(getCurrentZoneStreets2()), t = /* @__PURE__ */ new Set();
-    lectureStreetSearchIndex = e.map(
-      (e2) => {
-        var _a;
-        return "string" == typeof ((_a = e2 == null ? void 0 : e2.properties) == null ? void 0 : _a.name) ? e2.properties.name.trim() : "";
-      }
-    ).filter((e2) => !!e2).filter((e2) => {
+    let e = [];
+    if ("monuments" === getZoneMode())
+      e = allMonuments.map(
+        (e2) => {
+          var _a;
+          return "string" == typeof ((_a = e2 == null ? void 0 : e2.properties) == null ? void 0 : _a.name) ? e2.properties.name.trim() : "";
+        }
+      ).filter((e2) => !!e2);
+    else if ("quartiers-ville" === getZoneMode())
+      e = allQuartierFeatures.map((e2) => getQuartierTargetName(e2)).filter((e2) => !!e2);
+    else {
+      const t2 = buildUniqueStreetList2(getCurrentZoneStreets2());
+      e = t2.map(
+        (e2) => {
+          var _a;
+          return "string" == typeof ((_a = e2 == null ? void 0 : e2.properties) == null ? void 0 : _a.name) ? e2.properties.name.trim() : "";
+        }
+      ).filter((e2) => !!e2);
+    }
+    const t = /* @__PURE__ */ new Set();
+    lectureStreetSearchIndex = e.filter((e2) => {
       const r = normalizeSearchText(e2);
       return !!r && (!t.has(r) && (t.add(r), true));
     }).map((e2) => {
@@ -5392,8 +5446,9 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     const { results } = getLectureSearchElements();
     if (!results) return;
     if (!e || 0 === e.length) {
+      const t = getLectureSearchCopy();
       const e2 = document.createElement("div");
-      return e2.className = "lecture-search-empty", e2.textContent = "Aucune rue trouv\xE9e.", results.innerHTML = "", results.appendChild(e2), void results.classList.remove("hidden");
+      return e2.className = "lecture-search-empty", e2.textContent = t.noResults, results.innerHTML = "", results.appendChild(e2), void results.classList.remove("hidden");
     }
     results.innerHTML = "", e.forEach((e2) => {
       const t = document.createElement("button");
@@ -5403,9 +5458,10 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     }), results.classList.remove("hidden");
   }
   function focusLectureStreetBySearchName(e) {
+    const t = getLectureSearchCopy();
     if (!e) return;
-    const t = focusStreetByName(e);
-    if (!t) return void showMessage("Rue introuvable dans la zone actuelle.", "error");
+    const r = focusLectureSearchResultByName(e);
+    if (!r) return void showMessage(t.notFound, "error");
     const { input } = getLectureSearchElements();
     input && (input.value = e), closeLectureStreetSearchResults();
   }
@@ -5416,10 +5472,12 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     return e ? (lectureStreetSearchMatches = findLectureStreetMatches(e), void renderLectureStreetSearchResults(lectureStreetSearchMatches)) : void closeLectureStreetSearchResults();
   }
   function refreshLectureStreetSearchForCurrentMode(e = {}) {
-    const t = true === e.preserveQuery, r = isLectureMode && "monuments" !== getZoneMode() && "quartiers-ville" !== getZoneMode(), { input } = getLectureSearchElements();
+    const t = true === e.preserveQuery, r = isLectureMode, a = getLectureSearchCopy(), { input } = getLectureSearchElements();
     if (!r)
       return void setLectureStreetSearchVisible(false, t);
-    setLectureStreetSearchVisible(true, t), buildLectureStreetSearchIndex(), input && (input.disabled = 0 === lectureStreetSearchIndex.length, input.placeholder = 0 === lectureStreetSearchIndex.length ? "Aucune rue disponible pour cette zone" : "Rechercher une rue (nom ou mot)", t && input.value.trim() && lectureStreetSearchIndex.length > 0 ? updateLectureStreetSearchResults() : closeLectureStreetSearchResults());
+    const n = document.querySelector('label[for="lecture-search-input"]');
+    n && (n.textContent = a.srLabel);
+    setLectureStreetSearchVisible(true, t), buildLectureStreetSearchIndex(), input && (input.disabled = 0 === lectureStreetSearchIndex.length, input.setAttribute("aria-label", a.srLabel), input.placeholder = 0 === lectureStreetSearchIndex.length ? a.unavailable : a.placeholder, t && input.value.trim() && lectureStreetSearchIndex.length > 0 ? updateLectureStreetSearchResults() : closeLectureStreetSearchResults());
   }
   function initLectureStreetSearch() {
     const { container, input } = getLectureSearchElements();
@@ -5436,12 +5494,13 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       if ("Enter" === e.key) {
         e.preventDefault();
         const t = input.value.trim();
+        const r = getLectureSearchCopy();
         if (!t) return;
         if (0 === lectureStreetSearchIndex.length)
-          return void showMessage("Aucune rue disponible pour cette zone.", "warning");
+          return void showMessage(r.unavailable, "warning");
         0 === lectureStreetSearchMatches.length && (lectureStreetSearchMatches = findLectureStreetMatches(t));
-        const r = lectureStreetSearchMatches[0] || lectureStreetSearchIndex.find((e2) => e2.normalized === normalizeSearchText(t));
-        r ? focusLectureStreetBySearchName(r.name) : showMessage("Rue introuvable dans la zone actuelle.", "error");
+        const a = lectureStreetSearchMatches[0] || lectureStreetSearchIndex.find((e2) => e2.normalized === normalizeSearchText(t));
+        a ? focusLectureStreetBySearchName(a.name) : showMessage(r.notFound, "error");
       }
     }), document.addEventListener("click", (e) => {
       container.contains(e.target) || closeLectureStreetSearchResults();
