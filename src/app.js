@@ -3846,7 +3846,7 @@ function handleStreetClick(e, t, r) {
             (dailyTargetData.targetGeometry = e.targetGeometry || dailyTargetData.targetGeometry),
             e.targetGeometry &&
             (e.success || e.attempts_count >= 7) &&
-            highlightDailyTarget(e.targetGeometry, !!e.success));
+            revealDailyTargetStreet(!!e.success));
           if (e.success || e.attempts_count >= 7) {
             loadAllLeaderboards();
           }
@@ -4864,8 +4864,8 @@ function startDailySession(e) {
     r
       ? (dailyGuessHistory.length > 0 && renderDailyGuessHistory(a),
         e.targetGeometry &&
-        ((dailyTargetData.targetGeometry = e.targetGeometry),
-          highlightDailyTarget(e.targetGeometry, t.success)),
+        (dailyTargetData.targetGeometry = e.targetGeometry),
+        revealDailyTargetStreet(!!t.success),
         t.success
           ? showMessage(
             `🎉 Déjà réussi aujourd'hui en ${t.attempts_count} essai${t.attempts_count > 1 ? "s" : ""} !`,
@@ -5031,15 +5031,18 @@ function highlightDailyTarget(e, t) {
     dailyHighlightLayer,
   });
 }
+function buildDailyTargetFeatureCollection(e) {
+  const t = normalizeName(e);
+  if (!t || !Array.isArray(allStreetFeatures) || 0 === allStreetFeatures.length) return null;
+  const r = allStreetFeatures.filter(
+    (e) => e && e.properties && normalizeName(e.properties.name) === t && e.geometry,
+  );
+  return r.length > 0 ? { type: "FeatureCollection", features: r } : null;
+}
 function revealDailyTargetStreet(e = !1) {
   if (!dailyTargetData) return;
-  const t = normalizeName(dailyTargetData.streetName),
-    r = t
-      ? allStreetFeatures.find(
-        (e) => e.properties && normalizeName(e.properties.name) === t,
-      )
-      : null;
-  if (r && r.geometry) return void highlightDailyTarget(r.geometry, e);
+  const t = buildDailyTargetFeatureCollection(dailyTargetData.streetName);
+  if (t) return void highlightDailyTarget(t, e);
   dailyTargetData.targetGeometry && highlightDailyTarget(dailyTargetData.targetGeometry, e);
 }
 function removeDailyHighlight() {

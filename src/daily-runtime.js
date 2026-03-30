@@ -124,21 +124,50 @@ export function highlightDailyTargetRuntime({
     return nextLayer;
   }
 
-  let geometry;
+  let parsedTarget;
   try {
-    geometry = typeof targetGeometry === "string" ? JSON.parse(targetGeometry) : targetGeometry;
+    parsedTarget = typeof targetGeometry === "string" ? JSON.parse(targetGeometry) : targetGeometry;
   } catch (error) {
     console.error("Invalid target geometry:", error);
     return nextLayer;
   }
 
+  let geoJsonPayload = null;
+  if (parsedTarget && typeof parsedTarget === "object") {
+    if (parsedTarget.type === "FeatureCollection" || parsedTarget.type === "Feature") {
+      geoJsonPayload = parsedTarget;
+    } else if (Array.isArray(parsedTarget)) {
+      const features = parsedTarget
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") {
+            return null;
+          }
+          if (entry.type === "Feature" && entry.geometry) {
+            return entry;
+          }
+          if (entry.type && entry.coordinates) {
+            return { type: "Feature", geometry: entry, properties: {} };
+          }
+          return null;
+        })
+        .filter(Boolean);
+      if (features.length > 0) {
+        geoJsonPayload = { type: "FeatureCollection", features };
+      }
+    } else if (parsedTarget.type && parsedTarget.coordinates) {
+      geoJsonPayload = { type: "Feature", geometry: parsedTarget, properties: {} };
+    }
+  }
+
+  if (!geoJsonPayload) {
+    console.warn("Unsupported target geometry payload for daily highlight");
+    return nextLayer;
+  }
+
   const color = isSuccess ? uiTheme.mapCorrect : uiTheme.mapWrong;
-  nextLayer = L.geoJSON(
-    { type: "Feature", geometry, properties: {} },
-    {
-      style: { color, weight: 6, opacity: 1, dashArray: isSuccess ? null : "8, 4" },
-    },
-  ).addTo(map);
+  nextLayer = L.geoJSON(geoJsonPayload, {
+    style: { color, weight: 6, opacity: 1, dashArray: isSuccess ? null : "8, 4" },
+  }).addTo(map);
 
   try {
     if (nextLayer && Object.keys(nextLayer._layers).length > 0) {

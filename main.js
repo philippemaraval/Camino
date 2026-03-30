@@ -3121,20 +3121,45 @@ Essaie de faire mieux sur ${host}`;
     if (!targetGeometry || !map2) {
       return nextLayer;
     }
-    let geometry;
+    let parsedTarget;
     try {
-      geometry = typeof targetGeometry === "string" ? JSON.parse(targetGeometry) : targetGeometry;
+      parsedTarget = typeof targetGeometry === "string" ? JSON.parse(targetGeometry) : targetGeometry;
     } catch (error) {
       console.error("Invalid target geometry:", error);
       return nextLayer;
     }
-    const color = isSuccess ? uiTheme.mapCorrect : uiTheme.mapWrong;
-    nextLayer = L2.geoJSON(
-      { type: "Feature", geometry, properties: {} },
-      {
-        style: { color, weight: 6, opacity: 1, dashArray: isSuccess ? null : "8, 4" }
+    let geoJsonPayload = null;
+    if (parsedTarget && typeof parsedTarget === "object") {
+      if (parsedTarget.type === "FeatureCollection" || parsedTarget.type === "Feature") {
+        geoJsonPayload = parsedTarget;
+      } else if (Array.isArray(parsedTarget)) {
+        const features = parsedTarget.map((entry) => {
+          if (!entry || typeof entry !== "object") {
+            return null;
+          }
+          if (entry.type === "Feature" && entry.geometry) {
+            return entry;
+          }
+          if (entry.type && entry.coordinates) {
+            return { type: "Feature", geometry: entry, properties: {} };
+          }
+          return null;
+        }).filter(Boolean);
+        if (features.length > 0) {
+          geoJsonPayload = { type: "FeatureCollection", features };
+        }
+      } else if (parsedTarget.type && parsedTarget.coordinates) {
+        geoJsonPayload = { type: "Feature", geometry: parsedTarget, properties: {} };
       }
-    ).addTo(map2);
+    }
+    if (!geoJsonPayload) {
+      console.warn("Unsupported target geometry payload for daily highlight");
+      return nextLayer;
+    }
+    const color = isSuccess ? uiTheme.mapCorrect : uiTheme.mapWrong;
+    nextLayer = L2.geoJSON(geoJsonPayload, {
+      style: { color, weight: 6, opacity: 1, dashArray: isSuccess ? null : "8, 4" }
+    }).addTo(map2);
     try {
       if (nextLayer && Object.keys(nextLayer._layers).length > 0) {
         const bounds = nextLayer.getBounds();
@@ -6645,7 +6670,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
           isSuccess: n2
         })
       }).then((e2) => e2.json()).then((e2) => {
-        dailyTargetData.userStatus = e2, dailyTargetData.targetGeometry = e2.targetGeometry || dailyTargetData.targetGeometry, e2.targetGeometry && (e2.success || e2.attempts_count >= 7) && highlightDailyTarget(e2.targetGeometry, !!e2.success);
+        dailyTargetData.userStatus = e2, dailyTargetData.targetGeometry = e2.targetGeometry || dailyTargetData.targetGeometry, e2.targetGeometry && (e2.success || e2.attempts_count >= 7) && revealDailyTargetStreet(!!e2.success);
         if (e2.success || e2.attempts_count >= 7) {
           loadAllLeaderboards();
         }
@@ -7118,7 +7143,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     }
     loadFriendChallengeLeaderboard();
   }
-  infoEl && (infoEl.textContent = ""), function() {
+  infoEl && (infoEl.textContent = ""), (function() {
     const e = document.getElementById("weighted-score-help-btn"), t = document.getElementById("weighted-score-help");
     if (!e || !t) return;
     t.id || (t.id = "weighted-score-help"), e.setAttribute("aria-controls", t.id), e.setAttribute("aria-expanded", "false");
@@ -7138,7 +7163,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     ), document.addEventListener("keydown", (e2) => {
       "Escape" === e2.key && a();
     });
-  }();
+  })();
   function loadProfile() {
     loadProfileRuntime({
       currentUser,
@@ -7279,7 +7304,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     setTargetPanelTitleText(u), updateTargetItemCounter(), isSessionRunning = true, refreshLectureStreetSearchForCurrentMode(), updateLayoutSessionState();
     const d = document.getElementById("skip-btn"), c = document.getElementById("pause-btn");
     d && (d.style.display = "none"), c && (c.style.display = "none");
-    updateStartStopButton(), s && s.dispatchEvent(new Event("change")), r ? (dailyGuessHistory.length > 0 && renderDailyGuessHistory(a), e.targetGeometry && (dailyTargetData.targetGeometry = e.targetGeometry, highlightDailyTarget(e.targetGeometry, t.success)), t.success ? showMessage(
+    updateStartStopButton(), s && s.dispatchEvent(new Event("change")), r ? (dailyGuessHistory.length > 0 && renderDailyGuessHistory(a), e.targetGeometry && (dailyTargetData.targetGeometry = e.targetGeometry), revealDailyTargetStreet(!!t.success), t.success ? showMessage(
       `\u{1F389} D\xE9j\xE0 r\xE9ussi aujourd'hui en ${t.attempts_count} essai${t.attempts_count > 1 ? "s" : ""} !`,
       "success"
     ) : showMessage(
@@ -7414,12 +7439,18 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       dailyHighlightLayer
     });
   }
+  function buildDailyTargetFeatureCollection(e) {
+    const t = normalizeName(e);
+    if (!t || !Array.isArray(allStreetFeatures) || 0 === allStreetFeatures.length) return null;
+    const r = allStreetFeatures.filter(
+      (e2) => e2 && e2.properties && normalizeName(e2.properties.name) === t && e2.geometry
+    );
+    return r.length > 0 ? { type: "FeatureCollection", features: r } : null;
+  }
   function revealDailyTargetStreet(e = false) {
     if (!dailyTargetData) return;
-    const t = normalizeName(dailyTargetData.streetName), r = t ? allStreetFeatures.find(
-      (e2) => e2.properties && normalizeName(e2.properties.name) === t
-    ) : null;
-    if (r && r.geometry) return void highlightDailyTarget(r.geometry, e);
+    const t = buildDailyTargetFeatureCollection(dailyTargetData.streetName);
+    if (t) return void highlightDailyTarget(t, e);
     dailyTargetData.targetGeometry && highlightDailyTarget(dailyTargetData.targetGeometry, e);
   }
   function removeDailyHighlight() {
