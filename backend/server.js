@@ -103,6 +103,7 @@ const CONTENT_EDITOR_ROLES = new Set([USER_ROLE_EDITOR, USER_ROLE_ADMIN]);
 const STREET_INFOS_SETTING_KEY = 'content_street_infos_v1';
 const CONTENT_LISTS_SETTING_KEY = 'content_lists_v1';
 const CONTENT_MONUMENTS_SETTING_KEY = 'content_monuments_v1';
+const MAP_SYNC_META_SETTING_KEY = 'map_sync_meta_v1';
 const MAX_STREET_INFO_ENTRIES = 20000;
 const MAX_LIST_ENTRIES = 20000;
 const MAX_MONUMENT_ENTRIES = 20000;
@@ -117,6 +118,7 @@ const OSM_SYNC_WATCHED_FILES = [
     path.join(__dirname, 'data', 'streets_index.json'),
     path.join(__dirname, '..', 'data', 'map_sync_meta.json'),
 ];
+const MAP_SYNC_META_FILE_PATH = path.join(__dirname, '..', 'data', 'map_sync_meta.json');
 let osmSyncInProgress = false;
 
 if (!JWT_SECRET_KEY) {
@@ -823,6 +825,56 @@ function parseJsonSetting(rawValue) {
     }
 }
 
+function normalizeMapSyncMeta(rawValue) {
+    if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
+        return null;
+    }
+    const lastSyncedAt = String(rawValue.lastSyncedAt || '').trim();
+    if (!lastSyncedAt || Number.isNaN(Date.parse(lastSyncedAt))) {
+        return null;
+    }
+
+    const normalized = {
+        lastSyncedAt,
+    };
+    if (typeof rawValue.generatedBy === 'string' && rawValue.generatedBy.trim()) {
+        normalized.generatedBy = rawValue.generatedBy.trim();
+    }
+    if (Array.isArray(rawValue.overpassEndpoints)) {
+        normalized.overpassEndpoints = rawValue.overpassEndpoints
+            .map((entry) => String(entry || '').trim())
+            .filter(Boolean);
+    }
+    if (Number.isFinite(Number(rawValue.overpassElements))) {
+        normalized.overpassElements = Number(rawValue.overpassElements);
+    }
+    if (Number.isFinite(Number(rawValue.keptSegments))) {
+        normalized.keptSegments = Number(rawValue.keptSegments);
+    }
+    if (Number.isFinite(Number(rawValue.uniqueStreets))) {
+        normalized.uniqueStreets = Number(rawValue.uniqueStreets);
+    }
+    return normalized;
+}
+
+function loadMapSyncMetaFromFile() {
+    try {
+        const raw = fs.readFileSync(MAP_SYNC_META_FILE_PATH, 'utf8');
+        const parsed = JSON.parse(raw);
+        return normalizeMapSyncMeta(parsed);
+    } catch (error) {
+        return null;
+    }
+}
+
+async function getEffectiveMapSyncMeta() {
+    const fromDb = normalizeMapSyncMeta(parseJsonSetting(await db.getAppSetting(MAP_SYNC_META_SETTING_KEY)));
+    if (fromDb) {
+        return fromDb;
+    }
+    return loadMapSyncMetaFromFile();
+}
+
 function loadDefaultStreetInfosFromFile() {
     try {
         const raw = fs.readFileSync(path.join(__dirname, '..', 'data', 'street_infos.json'), 'utf8');
@@ -1331,6 +1383,14 @@ app.get('/api/content/public', asyncHandler(async (req, res) => {
     });
 }));
 
+app.get('/api/map-sync-meta', asyncHandler(async (req, res) => {
+    const meta = await getEffectiveMapSyncMeta();
+    if (!meta) {
+        return res.status(404).json({ error: 'Map sync metadata unavailable' });
+    }
+    return res.json(meta);
+}));
+
 app.get('/api/editor/me', authenticateToken, asyncHandler(async (req, res) => {
     const user = await db.getUserById(req.user.id);
     if (!user) {
@@ -1400,9 +1460,21 @@ app.post('/api/editor/osm-sync', authenticateToken, requireContentEditor, asyncH
             });
         }
 
+        let mapSyncMeta = loadMapSyncMetaFromFile();
+        if (mapSyncMeta) {
+            try {
+                await db.setAppSetting(MAP_SYNC_META_SETTING_KEY, JSON.stringify(mapSyncMeta));
+            } catch (error) {
+                console.warn('Could not persist map sync metadata in app_settings:', error.message);
+            }
+        } else {
+            mapSyncMeta = await getEffectiveMapSyncMeta();
+        }
+
         return res.json({
             success: true,
             ...payload,
+            mapSyncMeta: mapSyncMeta || null,
         });
     } catch (error) {
         return res.status(500).json({

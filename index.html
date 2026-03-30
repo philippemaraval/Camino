@@ -435,11 +435,22 @@
         return formatter.format(parsed);
       }
 
-      fetch("data/map_sync_meta.json")
-        .then((response) => {
+      const apiBase =
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1" ||
+        window.location.protocol === "file:"
+          ? "http://localhost:3000"
+          : "https://camino2.onrender.com";
+
+      function fetchJson(url) {
+        return fetch(url, { cache: "no-store" }).then((response) => {
           if (!response.ok) throw new Error("HTTP " + response.status);
           return response.json();
-        })
+        });
+      }
+
+      fetchJson(apiBase + "/api/map-sync-meta")
+        .catch(() => fetchJson("data/map_sync_meta.json"))
         .then((meta) => {
           const formatted = formatSyncDate(meta && meta.lastSyncedAt);
           syncMetaEl.textContent = formatted ? "Sync carte : " + formatted : "Sync carte : inconnue";
