@@ -48,7 +48,12 @@ out body;
 out skel qt;
 `;
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+const OVERPASS_URLS = Array.from(new Set([
+    process.env.OVERPASS_URL,
+    'https://overpass-api.de/api/interpreter',
+    'https://lz4.overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter'
+].filter(Boolean)));
 
 // ── Utilitaires ──
 
@@ -84,6 +89,23 @@ function httpPost(url, body) {
         req.write(body);
         req.end();
     });
+}
+
+async function fetchOverpassWithFallback(body) {
+    const failures = [];
+    for (const endpoint of OVERPASS_URLS) {
+        const host = new URL(endpoint).host;
+        console.log(`   → Essai ${host}...`);
+        try {
+            return await httpPost(endpoint, body);
+        } catch (err) {
+            const message = err && err.message ? err.message : String(err);
+            failures.push(`${host}: ${message}`);
+            console.warn(`   ⚠️  ${host} a échoué.`);
+        }
+    }
+
+    throw new Error(`Toutes les instances Overpass ont échoué.\n${failures.join('\n')}`);
 }
 
 // ── Point-in-Polygon (ray casting) ──
@@ -228,10 +250,10 @@ async function main() {
 
     let rawResponse;
     try {
-        rawResponse = await httpPost(OVERPASS_URL, body);
+        rawResponse = await fetchOverpassWithFallback(body);
     } catch (err) {
         console.error('❌ Erreur Overpass:', err.message);
-        console.log('\n💡 Astuce : si le serveur est surchargé, réessaie dans quelques minutes.');
+        console.log('\n💡 Astuce : définir OVERPASS_URL si tu veux forcer une instance spécifique.');
         process.exit(1);
     }
 
