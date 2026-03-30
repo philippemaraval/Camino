@@ -20,7 +20,7 @@
   <link rel="manifest" href="/site.webmanifest">
   <meta name="theme-color" content="#ffffff">
 
-  <link rel="stylesheet" href="style.css?v=20260310e">
+  <link rel="stylesheet" href="style.css?v=20260330a">
 
   <!-- Preload heavy GeoJSON data as early as possible -->
   <link rel="preload" href="data/marseille_rues_light.geojson?v=11" as="fetch" crossorigin>
@@ -352,6 +352,7 @@
 
         <footer class="sidebar-footer" aria-label="Réseaux sociaux et crédits">
           <p class="sidebar-credit">Crafted in Marseille by Philippe Maraval</p>
+          <p id="map-sync-meta" class="sidebar-map-sync" aria-live="polite">Sync carte : —</p>
           <div class="sidebar-visitors-row">
             <p id="visitor-counter" class="sidebar-visitors">Visites : —</p>
             <a class="sidebar-rules-link" href="/regles.html"
@@ -412,6 +413,42 @@
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.js"></script>
   <script src="data_rules.js?v=20260304y"></script>
   <script src="main.js?v=20260319b"></script>
+  <script>
+    (function () {
+      const syncMetaEl = document.getElementById("map-sync-meta");
+      if (!syncMetaEl) return;
+
+      function formatSyncDate(rawIso) {
+        if (typeof rawIso !== "string" || !rawIso.trim()) return null;
+        const parsed = new Date(rawIso);
+        if (Number.isNaN(parsed.getTime())) return null;
+        const formatter = new Intl.DateTimeFormat("fr-FR", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+          timeZone: "Europe/Paris",
+        });
+        return formatter.format(parsed);
+      }
+
+      fetch("data/map_sync_meta.json")
+        .then((response) => {
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          return response.json();
+        })
+        .then((meta) => {
+          const formatted = formatSyncDate(meta && meta.lastSyncedAt);
+          syncMetaEl.textContent = formatted ? "Sync carte : " + formatted : "Sync carte : inconnue";
+        })
+        .catch(() => {
+          syncMetaEl.textContent = "Sync carte : inconnue";
+        });
+    })();
+  </script>
 </body>
 
 </html>

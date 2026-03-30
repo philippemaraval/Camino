@@ -26,6 +26,7 @@ const BACKEND_DATA_DIR = path.join(PROJECT_DIR, 'backend', 'data');
 const QUARTIERS_FILE = path.join(BACKEND_DATA_DIR, 'marseille_quartiers_111.geojson');
 const OUTPUT_ENRICHI = path.join(DATA_DIR, 'marseille_rues_enrichi.geojson');
 const OUTPUT_LIGHT = path.join(DATA_DIR, 'marseille_rues_light.geojson');
+const OUTPUT_SYNC_META = path.join(DATA_DIR, 'map_sync_meta.json');
 const BACKEND_LIGHT = path.join(BACKEND_DATA_DIR, 'marseille_rues_light.geojson');
 const STREETS_INDEX = path.join(BACKEND_DATA_DIR, 'streets_index.json');
 
@@ -346,6 +347,17 @@ async function main() {
     fs.writeFileSync(STREETS_INDEX, JSON.stringify(uniqueIndex), 'utf8');
     const indexSize = (fs.statSync(STREETS_INDEX).size / 1_000_000).toFixed(1);
     console.log(`   ✅ ${STREETS_INDEX} (${indexSize} Mo, ${uniqueIndex.length} rues uniques)`);
+
+    const syncMeta = {
+        lastSyncedAt: new Date().toISOString(),
+        generatedBy: 'scripts/sync_osm.js',
+        overpassEndpoints: OVERPASS_URLS,
+        overpassElements: totalElements,
+        keptSegments: filteredEntries.length,
+        uniqueStreets: uniqueIndex.length
+    };
+    fs.writeFileSync(OUTPUT_SYNC_META, JSON.stringify(syncMeta, null, 2) + '\n', 'utf8');
+    console.log(`   ✅ ${OUTPUT_SYNC_META}`);
 
     console.log('\n🎉 Synchronisation terminée !');
     console.log(`   Total : ${features.length} segments de rues, ${uniqueIndex.length} noms uniques.`);
