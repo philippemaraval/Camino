@@ -129,6 +129,9 @@ const MAX_NAME_LENGTH = 160;
 const MAX_INFO_LENGTH = 5000;
 const OSM_SYNC_TIMEOUT_MS = readEnvIntegerInRange('OSM_SYNC_TIMEOUT_MS', 12 * 60 * 1000, 30_000, 30 * 60 * 1000);
 const OSM_SYNC_LOG_MAX_CHARS = 120_000;
+const PUBLIC_CONTENT_CACHE_TTL_MS = readEnvIntegerInRange('PUBLIC_CONTENT_CACHE_TTL_MS', 5 * 60 * 1000, 0, 24 * 60 * 60 * 1000);
+const LEADERBOARDS_CACHE_TTL_MS = readEnvIntegerInRange('LEADERBOARDS_CACHE_TTL_MS', 60 * 1000, 0, 24 * 60 * 60 * 1000);
+const DAILY_LEADERBOARD_CACHE_TTL_MS = readEnvIntegerInRange('DAILY_LEADERBOARD_CACHE_TTL_MS', 60 * 1000, 0, 24 * 60 * 60 * 1000);
 const OSM_SYNC_WATCHED_FILES = [
     path.join(__dirname, '..', 'data', 'marseille_rues_enrichi.geojson'),
     path.join(__dirname, '..', 'data', 'marseille_rues_light.geojson'),
@@ -138,6 +141,10 @@ const OSM_SYNC_WATCHED_FILES = [
 ];
 const MAP_SYNC_META_FILE_PATH = path.join(__dirname, '..', 'data', 'map_sync_meta.json');
 let osmSyncInProgress = false;
+const publicContentCache = createAsyncTtlCache(PUBLIC_CONTENT_CACHE_TTL_MS);
+const allLeaderboardsCache = createAsyncTtlCache(LEADERBOARDS_CACHE_TTL_MS);
+const monthlyLeaderboardsCache = createAsyncTtlCache(LEADERBOARDS_CACHE_TTL_MS);
+const dailyLeaderboardCache = createAsyncTtlCache(DAILY_LEADERBOARD_CACHE_TTL_MS);
 
 if (!JWT_SECRET_KEY) {
     if (IS_PRODUCTION) {
@@ -147,6 +154,107 @@ if (!JWT_SECRET_KEY) {
 }
 
 const EFFECTIVE_JWT_SECRET = JWT_SECRET_KEY || crypto.randomBytes(32).toString('hex');
+
+function cloneJsonValue(value) {
+    if (value === null || value === undefined) {
+        return value;
+    }
+    return JSON.parse(JSON.stringify(value));
+}
+
+function createAsyncTtlCache(ttlMs) {
+    return {
+        ttlMs: Math.max(0, Number(ttlMs) || 0),
+        value: null,
+        expiresAt: 0,
+        inflight: null,
+        key: '',
+    };
+}
+
+async function readAsyncTtlCache(cache, loader, { key = '', force = false } = {}) {
+    const now = Date.now();
+    const hasFreshValue =
+        !force &&
+        cache.value !== null &&
+        cache.key === key &&
+        cache.expiresAt > now;
+    if (hasFreshValue) {
+        return cloneJsonValue(cache.value);
+    }
+
+    if (cache.inflight && cache.key === key) {
+        const pendingValue = await cache.inflight;
+        return cloneJsonValue(pendingValue);
+    }
+
+    cache.key = key;
+    cache.inflight = Promise.resolve()
+        .then(loader)
+        .then((value) => {
+            cache.value = cloneJsonValue(value);
+            cache.expiresAt = Date.now() + cache.ttlMs;
+            return cache.value;
+        })
+        .finally(() => {
+            cache.inflight = null;
+        });
+
+    const value = await cache.inflight;
+    return cloneJsonValue(value);
+}
+
+function invalidateAsyncTtlCache(cache) {
+    cache.value = null;
+    cache.expiresAt = 0;
+    cache.inflight = null;
+    cache.key = '';
+}
+
+function invalidatePublicContentCache() {
+    invalidateAsyncTtlCache(publicContentCache);
+}
+
+function invalidateLeaderboardCaches() {
+    invalidateAsyncTtlCache(allLeaderboardsCache);
+    invalidateAsyncTtlCache(monthlyLeaderboardsCache);
+    invalidateAsyncTtlCache(dailyLeaderboardCache);
+}
+
+async function getCachedPublicContentSnapshot() {
+    return readAsyncTtlCache(publicContentCache, () => getEffectiveContentSnapshot(), {
+        key: 'public-content',
+    });
+}
+
+async function getCachedLeaderboards(period) {
+    const normalizedPeriod = period === 'month' ? 'month' : 'all';
+    const cache = normalizedPeriod === 'month' ? monthlyLeaderboardsCache : allLeaderboardsCache;
+    return readAsyncTtlCache(
+        cache,
+        () => db.getAllLeaderboards(100, { period: normalizedPeriod }),
+        { key: normalizedPeriod },
+    );
+}
+
+async function getCachedDailyLeaderboard(dateStr) {
+    return readAsyncTtlCache(
+        dailyLeaderboardCache,
+        () => db.getDailyLeaderboard(dateStr),
+        { key: String(dateStr || '') },
+    );
+}
+
+function warmCriticalCachesInBackground() {
+    Promise.allSettled([
+        getCachedPublicContentSnapshot(),
+        getCachedLeaderboards('all'),
+        getCachedLeaderboards('month'),
+        getCachedDailyLeaderboard(getDateKeyInZone(DAILY_TIMEZONE)),
+    ]).catch(() => {
+        // Promise.allSettled should not reject, but keep background warming silent.
+    });
+}
 
 function buildPushRuntimeSignature(subject, publicKey, privateKey) {
     return `${subject}::${publicKey}::${privateKey}`;
@@ -319,17 +427,54 @@ app.use((err, req, res, next) => {
 
 app.use(express.json());
 
+app.get('/api/health', asyncHandler(async (req, res) => {
+    const startedAtMs = Date.now();
+    await db.ping();
+    if (req.query?.prewarm === '1' || req.query?.prewarm === 'true') {
+        warmCriticalCachesInBackground();
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({
+        ok: true,
+        database: 'ok',
+        durationMs: Date.now() - startedAtMs,
+        uptimeSec: Math.round(process.uptime()),
+    });
+}));
+
 // Serve static files (frontend)
 app.use(express.static(path.join(__dirname, '..')));
 
+async function initializeBackgroundServices() {
+    try {
+        await initializePushRuntime();
+    } catch (error) {
+        console.error('Push runtime init failed during background startup:', error);
+    }
+
+    try {
+        startPushReminderScheduler();
+    } catch (error) {
+        console.error('Push reminder scheduler failed to start:', error);
+    }
+
+    try {
+        startFriendChallengeCleanupScheduler();
+    } catch (error) {
+        console.error('Friend challenge cleanup scheduler failed to start:', error);
+    }
+
+    warmCriticalCachesInBackground();
+}
+
 // Initialize database then start server
-db.initDb().then(async () => {
+db.initDb().then(() => {
     console.log('Database ready.');
-    await initializePushRuntime();
-    startPushReminderScheduler();
-    startFriendChallengeCleanupScheduler();
     app.listen(PORT, () => {
         console.log(`Server running on http://localhost:${PORT}`);
+        initializeBackgroundServices().catch((error) => {
+            console.error('Background services initialization failed:', error);
+        });
     });
 }).catch(err => {
     console.error('Database init failed:', err);
@@ -1451,7 +1596,7 @@ function getStreetListKeyForMode(mode) {
 }
 
 app.get('/api/content/public', asyncHandler(async (req, res) => {
-    const snapshot = await getEffectiveContentSnapshot();
+    const snapshot = await getCachedPublicContentSnapshot();
     res.setHeader('Cache-Control', 'no-store');
     return res.json({
         streetInfos: snapshot.streetInfos,
@@ -1653,6 +1798,7 @@ app.put('/api/editor/street-info', authenticateToken, requireContentEditor, asyn
     if (listsUpdated) {
         await db.setAppSetting(CONTENT_LISTS_SETTING_KEY, JSON.stringify(lists));
     }
+    invalidatePublicContentCache();
 
     return res.json({
         success: true,
@@ -1676,6 +1822,7 @@ app.delete('/api/editor/street-info', authenticateToken, requireContentEditor, a
     const streetInfos = await getEffectiveStreetInfos();
     delete streetInfos[mode][streetName];
     await db.setAppSetting(STREET_INFOS_SETTING_KEY, JSON.stringify(streetInfos));
+    invalidatePublicContentCache();
 
     const lists = await getEffectiveContentLists();
     return res.json({
@@ -1697,6 +1844,7 @@ app.put('/api/editor/street-infos', authenticateToken, requireContentEditor, asy
     const streetInfos = await getEffectiveStreetInfos();
     streetInfos[mode] = normalizeStreetInfoEntries(req.body.entries);
     await db.setAppSetting(STREET_INFOS_SETTING_KEY, JSON.stringify(streetInfos));
+    invalidatePublicContentCache();
 
     const lists = await getEffectiveContentLists();
     return res.json({
@@ -1759,6 +1907,7 @@ app.put('/api/editor/lists', authenticateToken, requireContentEditor, asyncHandl
     lists.monuments = normalizeMonumentNameList(currentMonuments.map((entry) => entry.name));
 
     await db.setAppSetting(CONTENT_LISTS_SETTING_KEY, JSON.stringify(lists));
+    invalidatePublicContentCache();
 
     const streetInfos = await getEffectiveStreetInfos();
     return res.json({
@@ -1782,6 +1931,7 @@ app.put('/api/editor/monuments', authenticateToken, requireContentEditor, asyncH
     const lists = await getEffectiveContentLists();
     lists.monuments = normalizeMonumentNameList(monuments.map((entry) => entry.name));
     await db.setAppSetting(CONTENT_LISTS_SETTING_KEY, JSON.stringify(lists));
+    invalidatePublicContentCache();
 
     const streetInfos = await getEffectiveStreetInfos();
     return res.json({
@@ -1908,7 +2058,7 @@ app.get('/api/leaderboard', async (req, res) => {
 app.get('/api/leaderboards', async (req, res) => {
     try {
         const period = req.query.period === 'month' ? 'month' : 'all';
-        const data = await db.getAllLeaderboards(100, { period });
+        const data = await getCachedLeaderboards(period);
         res.json(data);
     } catch (err) {
         console.error('Leaderboards error:', err);
@@ -1939,6 +2089,10 @@ app.post('/api/scores', authenticateToken, asyncHandler(async (req, res) => {
         parsed.value.quartierName,
         parsed.value.sessionId,
     );
+
+    if (saved) {
+        invalidateLeaderboardCaches();
+    }
 
     return res.json({ success: true, duplicate: !saved });
 }));
@@ -2933,6 +3087,10 @@ app.post('/api/daily/guess', authenticateToken, asyncHandler(async (req, res) =>
             result.targetGeometry = target ? await getTargetGeometry(target) : null;
         }
 
+        if (result.success) {
+            invalidateAsyncTtlCache(dailyLeaderboardCache);
+        }
+
         return res.json(result);
     } catch (err) {
         console.error('Daily guess error:', err);
@@ -2943,7 +3101,7 @@ app.post('/api/daily/guess', authenticateToken, asyncHandler(async (req, res) =>
 app.get('/api/daily/leaderboard', async (req, res) => {
     try {
         const date = getDateKeyInZone(DAILY_TIMEZONE);
-        const rows = await db.getDailyLeaderboard(date);
+        const rows = await getCachedDailyLeaderboard(date);
         res.json(rows);
     } catch (err) {
         console.error('Daily leaderboard error:', err);
@@ -3141,6 +3299,7 @@ app.post('/api/admin/push/send-daily-now', requireAdminApiKey, async (req, res) 
 app.post('/api/admin/clean-leaderboard', requireAdminApiKey, async (req, res) => {
     try {
         await db.clearAllScores();
+        invalidateLeaderboardCaches();
 
         res.json({
             success: true,

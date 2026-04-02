@@ -118,6 +118,8 @@ const MAP_REGION_MAX_BOUNDS = [
 ];
 let swRegistrationPromise = null;
 let notificationConfigCache = null;
+let backendWarmupPromise = null;
+let runtimeContentLoadPromise = null;
 
 function normalizeStreetInfoMapPayload(entries) {
   if (!entries || typeof entries !== "object" || Array.isArray(entries)) {
@@ -244,7 +246,7 @@ function applyPublicContentPayload(payload) {
 
 async function loadStreetInfosFromStaticFile() {
   try {
-    const response = await fetch('data/street_infos.json?v=' + Date.now());
+    const response = await fetch("data/street_infos.json");
     const data = await response.json();
     const normalizedFamousInfos = normalizeStreetInfoMapPayload(data?.famous);
     const normalizedMainInfos = normalizeStreetInfoMapPayload(data?.main);
@@ -257,7 +259,7 @@ async function loadStreetInfosFromStaticFile() {
 }
 
 async function loadPublicContentFromApi() {
-  const response = await fetch(`${API_URL}/api/content/public?v=${Date.now()}`, {
+  const response = await fetch(`${API_URL}/api/content/public`, {
     cache: "no-store",
   });
   if (!response.ok) {
@@ -268,14 +270,65 @@ async function loadPublicContentFromApi() {
   return payload;
 }
 
-async function loadStreetInfos() {
-  await loadStreetInfosFromStaticFile();
-  try {
-    await loadPublicContentFromApi();
-    console.log("Runtime content loaded from API");
-  } catch (error) {
-    console.warn("Runtime content API unavailable, fallback to static content.", error);
+function applyRuntimeContentRefresh() {
+  const modeSelect = document.getElementById("mode-select");
+  if (!modeSelect) {
+    return;
   }
+  modeSelect.dispatchEvent(new Event("change"));
+  refreshLectureStreetSearchForCurrentMode({ preserveQuery: !0 });
+  refreshLectureTooltipsIfNeeded();
+}
+
+function warmBackendConnection() {
+  if (backendWarmupPromise) {
+    return backendWarmupPromise;
+  }
+
+  backendWarmupPromise = fetch(`${API_URL}/api/health?prewarm=1`, {
+    cache: "no-store",
+  })
+    .then((response) => response.ok)
+    .catch(() => !1)
+    .finally(() => {
+      backendWarmupPromise = null;
+    });
+
+  return backendWarmupPromise;
+}
+
+function checkBackendAvailability() {
+  return fetch(`${API_URL}/api/health`, {
+    method: "HEAD",
+    cache: "no-store",
+  }).then((response) => {
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return response;
+  });
+}
+
+function loadStreetInfos() {
+  if (runtimeContentLoadPromise) {
+    return runtimeContentLoadPromise;
+  }
+
+  runtimeContentLoadPromise = loadStreetInfosFromStaticFile()
+    .then(async () => {
+      try {
+        await loadPublicContentFromApi();
+        applyRuntimeContentRefresh();
+        console.log("Runtime content loaded from API");
+      } catch (error) {
+        console.warn("Runtime content API unavailable, fallback to static content.", error);
+      }
+    })
+    .finally(() => {
+      runtimeContentLoadPromise = null;
+    });
+
+  return runtimeContentLoadPromise;
 }
 function normalizeName(e) {
   return String(e || "")
@@ -2579,12 +2632,13 @@ function initUI() {
   (initTooltipPopup(),
     window.addEventListener("offline", () => L(!0)),
     window.addEventListener("online", () => {
-      fetch(API_URL + "/api/leaderboards", { method: "HEAD" })
+      warmBackendConnection();
+      checkBackendAvailability()
         .then(() => L(!1))
         .catch(() => L(!0));
     }),
     navigator.onLine
-      ? fetch(API_URL + "/api/leaderboards", { method: "HEAD" }).catch(() =>
+      ? checkBackendAvailability().catch(() =>
         L(!0),
       )
       : L(!0),
@@ -2862,7 +2916,8 @@ function initUI() {
   (I && ((I.classList.add("hidden"), (I.innerHTML = ""))), clearSessionShareSlot());
 }
 document.addEventListener("DOMContentLoaded", async () => {
-  await loadStreetInfos();
+  warmBackendConnection();
+  loadStreetInfos();
   (setMapStatus("Chargement", "loading"),
     initMap(),
     initUI(),

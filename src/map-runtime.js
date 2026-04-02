@@ -41,26 +41,32 @@ export async function loadStreetsRuntime({
   addTouchBufferForLayer,
 }) {
   const startedAt = performance.now();
-  const syncToken = Date.now();
   const remoteApiBase = String(apiUrl || "").trim().replace(/\/+$/, "");
-  const candidateUrls = [];
+  const candidateRequests = [
+    {
+      url: "data/marseille_rues_light.geojson",
+      options: {},
+    },
+  ];
   if (remoteApiBase) {
-    candidateUrls.push(`${remoteApiBase}/api/streets-light?v=${syncToken}`);
+    candidateRequests.push({
+      url: `${remoteApiBase}/api/streets-light`,
+      options: { cache: "no-store" },
+    });
   }
-  candidateUrls.push(`data/marseille_rues_light.geojson?v=${syncToken}`);
 
   let response = null;
   let selectedUrl = "";
   let lastError = null;
-  for (const url of candidateUrls) {
+  for (const candidate of candidateRequests) {
     try {
-      const nextResponse = await fetch(url, { cache: "no-store" });
+      const nextResponse = await fetch(candidate.url, candidate.options);
       if (!nextResponse.ok) {
-        lastError = new Error(`Erreur HTTP ${nextResponse.status} (${url})`);
+        lastError = new Error(`Erreur HTTP ${nextResponse.status} (${candidate.url})`);
         continue;
       }
       response = nextResponse;
-      selectedUrl = url;
+      selectedUrl = candidate.url;
       break;
     } catch (error) {
       lastError = error;
@@ -149,7 +155,7 @@ export async function loadStreetsRuntime({
     streetLayersById,
     streetLayersByName,
     streetsLayer,
-    loadedFrom: selectedUrl || candidateUrls[0],
+    loadedFrom: selectedUrl || candidateRequests[0].url,
     loadedMs: (performance.now() - startedAt).toFixed(0),
   };
 }
@@ -290,9 +296,7 @@ export async function loadMonumentsRuntime({
   if (Array.isArray(runtimeMonuments)) {
     sourceFeatures = runtimeMonuments;
   } else {
-    const response = await fetch(`data/marseille_monuments.geojson?v=${Date.now()}`, {
-      cache: "no-store",
-    });
+    const response = await fetch("data/marseille_monuments.geojson");
     if (!response.ok) {
       throw new Error(`Impossible de charger les monuments (HTTP ${response.status}).`);
     }

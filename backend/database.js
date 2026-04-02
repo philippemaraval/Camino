@@ -1,6 +1,9 @@
 const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 
+const SCHEMA_BOOTSTRAP_KEY = 'schema_bootstrap_version';
+const SCHEMA_BOOTSTRAP_VERSION = '2026-04-02-latency-1';
+
 // Connect via DATABASE_URL (provided by Render PostgreSQL)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -9,10 +12,45 @@ const pool = new Pool({
     : false
 });
 
+async function hasCurrentSchemaBootstrap(client) {
+  const tableCheck = await client.query(
+    `SELECT to_regclass('public.app_settings') AS app_settings_table`
+  );
+  if (!tableCheck.rows[0]?.app_settings_table) {
+    return false;
+  }
+
+  const versionCheck = await client.query(
+    'SELECT value_text FROM app_settings WHERE key = $1',
+    [SCHEMA_BOOTSTRAP_KEY]
+  );
+  return versionCheck.rows[0]?.value_text === SCHEMA_BOOTSTRAP_VERSION;
+}
+
+async function markSchemaBootstrapComplete(client) {
+  await client.query(
+    `INSERT INTO app_settings (key, value_text, updated_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (key) DO UPDATE SET
+       value_text = EXCLUDED.value_text,
+       updated_at = NOW()`,
+    [SCHEMA_BOOTSTRAP_KEY, SCHEMA_BOOTSTRAP_VERSION]
+  );
+}
+
+async function ping() {
+  await pool.query('SELECT 1');
+}
+
 // Initialize database tables
 async function initDb() {
   const client = await pool.connect();
   try {
+    if (await hasCurrentSchemaBootstrap(client)) {
+      console.log('Database schema already up to date.');
+      return;
+    }
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -155,6 +193,32 @@ async function initDb() {
       ON scores (user_id, session_id)
     `);
 
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_scores_mode_game_type_timestamp
+      ON scores (mode, game_type, timestamp DESC, quartier_name, user_id)
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_scores_user_timestamp
+      ON scores (user_id, timestamp DESC, mode, game_type)
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_scores_user_quartier_timestamp
+      ON scores (user_id, quartier_name, timestamp DESC)
+      WHERE quartier_name IS NOT NULL AND TRIM(quartier_name) <> ''
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_daily_user_attempts_user_date
+      ON daily_user_attempts (user_id, date DESC)
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_daily_user_attempts_user_success_date
+      ON daily_user_attempts (user_id, success, date DESC)
+    `);
+
     // Analytics table
     await client.query(`
       CREATE TABLE IF NOT EXISTS analytics_streets (
@@ -200,6 +264,8 @@ async function initDb() {
       FROM visitors_unique
       ON CONFLICT (id) DO NOTHING
     `);
+
+    await markSchemaBootstrapComplete(client);
 
     console.log('Database initialized successfully.');
   } finally {
@@ -384,23 +450,125 @@ async function getLeaderboard(mode, gameType, quartierName = null, limit = 10, o
 async function getAllLeaderboards(limit = 100, options = {}) { // Increased limit since client truncates it
   const period = normalizeLeaderboardPeriod(options.period);
   const periodWhereClause = getLeaderboardPeriodWhereClause(period, 's');
-  const combos = await pool.query(
-    `SELECT DISTINCT mode, game_type, quartier_name
-     FROM scores s
-     WHERE 1 = 1
-     ${periodWhereClause}
-     ORDER BY mode, game_type, quartier_name`
+  const rows = await pool.query(
+    `WITH base AS (
+       SELECT
+         s.mode,
+         s.game_type,
+         CASE
+           WHEN s.mode = 'quartier'
+             THEN COALESCE(NULLIF(TRIM(s.quartier_name), ''), '__unknown__')
+           ELSE ''
+         END AS quartier_partition_key,
+         CASE
+           WHEN s.mode = 'quartier'
+             THEN COALESCE(NULLIF(TRIM(s.quartier_name), ''), 'unknown')
+           ELSE NULL
+         END AS quartier_name,
+         s.user_id,
+         s.username,
+         s.score,
+         s.items_correct,
+         s.items_total,
+         s.time_sec,
+         s.timestamp,
+         u.avatar
+       FROM scores s
+       LEFT JOIN users u ON s.user_id = u.id
+       WHERE 1 = 1
+       ${periodWhereClause}
+     ),
+     ranked_by_user AS (
+       SELECT
+         base.*,
+         COUNT(*) OVER (
+           PARTITION BY
+             base.mode,
+             base.game_type,
+             base.quartier_partition_key,
+             base.user_id,
+             base.username
+         ) AS games_played,
+         ROW_NUMBER() OVER (
+           PARTITION BY
+             base.mode,
+             base.game_type,
+             base.quartier_partition_key,
+             base.user_id,
+             base.username
+           ORDER BY
+             CASE
+               WHEN base.game_type = 'classique' THEN base.score::double precision
+               ELSE base.items_correct::double precision
+             END DESC,
+             base.time_sec ASC,
+             base.timestamp ASC
+         ) AS user_rank
+       FROM base
+     ),
+     best_runs AS (
+       SELECT
+         ranked_by_user.mode,
+         ranked_by_user.game_type,
+         ranked_by_user.quartier_name,
+         ranked_by_user.username,
+         ranked_by_user.avatar,
+         ranked_by_user.score AS high_score,
+         ranked_by_user.items_correct,
+         ranked_by_user.items_total,
+         ranked_by_user.time_sec,
+         ranked_by_user.games_played,
+         ROW_NUMBER() OVER (
+           PARTITION BY
+             ranked_by_user.mode,
+             ranked_by_user.game_type,
+             COALESCE(ranked_by_user.quartier_name, '')
+           ORDER BY
+             CASE
+               WHEN ranked_by_user.game_type = 'classique'
+                 THEN ranked_by_user.score::double precision
+               ELSE ranked_by_user.items_correct::double precision
+             END DESC,
+             ranked_by_user.time_sec ASC,
+             ranked_by_user.username ASC
+         ) AS leaderboard_rank
+       FROM ranked_by_user
+       WHERE ranked_by_user.user_rank = 1
+     )
+     SELECT
+       mode,
+       game_type,
+       quartier_name,
+       username,
+       avatar,
+       high_score,
+       items_correct,
+       items_total,
+       time_sec,
+       games_played
+     FROM best_runs
+     WHERE leaderboard_rank <= $1
+     ORDER BY mode, game_type, quartier_name NULLS FIRST, leaderboard_rank ASC`,
+    [limit]
   );
 
   const result = {};
-  const loaders = combos.rows.map(async ({ mode, game_type, quartier_name }) => {
-    let key = `${mode}|${game_type}`;
-    if (quartier_name) key += `|${quartier_name}`;
-    else if (mode === 'quartier') key += `|unknown`; // fallback for old scores
-
-    result[key] = await getLeaderboard(mode, game_type, quartier_name, limit, { period });
+  rows.rows.forEach((row) => {
+    let key = `${row.mode}|${row.game_type}`;
+    if (row.quartier_name) {
+      key += `|${row.quartier_name}`;
+    }
+    result[key] = result[key] || [];
+    result[key].push({
+      username: row.username,
+      avatar: row.avatar,
+      high_score: row.high_score,
+      items_correct: row.items_correct,
+      items_total: row.items_total,
+      time_sec: row.time_sec,
+      games_played: row.games_played,
+    });
   });
-  await Promise.all(loaders);
   return result;
 }
 
@@ -780,7 +948,7 @@ async function markPushSubscriptionNotified(endpoint, dateStr) {
 
 async function getUserStats(userId) {
   // Per-mode stats
-  const modeStats = await pool.query(
+  const modeStatsPromise = pool.query(
     `WITH grouped AS (
        SELECT
          mode,
@@ -829,7 +997,7 @@ async function getUserStats(userId) {
   );
 
   // Overall aggregates
-  const overall = await pool.query(
+  const overallPromise = pool.query(
     `SELECT COUNT(*) as total_games,
             COALESCE(MAX(score), 0) as best_score,
             ROUND(COALESCE(AVG(score), 0)::numeric, 1) as avg_score
@@ -838,7 +1006,7 @@ async function getUserStats(userId) {
   );
 
   // Best mode (highest high score)
-  const bestMode = await pool.query(
+  const bestModePromise = pool.query(
     `WITH ranked AS (
        SELECT
          mode,
@@ -865,7 +1033,7 @@ async function getUserStats(userId) {
     [userId]
   );
 
-  const weeklyProgress = await pool.query(
+  const weeklyProgressPromise = pool.query(
     `WITH weeks AS (
        SELECT generate_series(
          date_trunc('week', timezone('Europe/Paris', NOW())) - interval '11 weeks',
@@ -904,7 +1072,7 @@ async function getUserStats(userId) {
     [userId]
   );
 
-  const quartierStats = await pool.query(
+  const quartierStatsPromise = pool.query(
     `SELECT
        quartier_name,
        COUNT(*)::int AS games_played,
@@ -929,7 +1097,7 @@ async function getUserStats(userId) {
     [userId]
   );
 
-  const difficultyStats = await pool.query(
+  const difficultyStatsPromise = pool.query(
     `SELECT
        mode,
        COUNT(*)::int AS games_played,
@@ -951,7 +1119,7 @@ async function getUserStats(userId) {
   );
 
   // Daily challenge stats (basic)
-  const dailyStats = await pool.query(
+  const dailyStatsPromise = pool.query(
     `SELECT COUNT(*) as total_days,
             SUM(CASE WHEN success THEN 1 ELSE 0 END) as successes,
             ROUND(AVG(attempts_count)::numeric, 1) as avg_attempts
@@ -959,7 +1127,7 @@ async function getUserStats(userId) {
     [userId]
   );
 
-  const dailyStreaks = await pool.query(
+  const dailyStreaksPromise = pool.query(
     `WITH success_dates AS (
        SELECT DISTINCT date::date AS day
        FROM daily_user_attempts
@@ -1004,14 +1172,35 @@ async function getUserStats(userId) {
        ), 0)::int AS current_streak`,
     [userId]
   );
-  const currentStreak = Number(dailyStreaks.rows[0]?.current_streak || 0);
-  const maxStreak = Number(dailyStreaks.rows[0]?.max_streak || 0);
 
-  // Account creation date
-  const userInfo = await pool.query(
+  const userInfoPromise = pool.query(
     'SELECT created_at FROM users WHERE id = $1',
     [userId]
   );
+
+  const [
+    modeStats,
+    overall,
+    bestMode,
+    weeklyProgress,
+    quartierStats,
+    difficultyStats,
+    dailyStats,
+    dailyStreaks,
+    userInfo,
+  ] = await Promise.all([
+    modeStatsPromise,
+    overallPromise,
+    bestModePromise,
+    weeklyProgressPromise,
+    quartierStatsPromise,
+    difficultyStatsPromise,
+    dailyStatsPromise,
+    dailyStreaksPromise,
+    userInfoPromise,
+  ]);
+  const currentStreak = Number(dailyStreaks.rows[0]?.current_streak || 0);
+  const maxStreak = Number(dailyStreaks.rows[0]?.max_streak || 0);
 
   return {
     memberSince: userInfo.rows[0]?.created_at || null,
@@ -1174,6 +1363,7 @@ async function clearAllScores() {
 
 module.exports = {
   initDb,
+  ping,
   createUser,
   getUser,
   getUserById,

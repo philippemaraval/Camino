@@ -1911,25 +1911,31 @@
     addTouchBufferForLayer: addTouchBufferForLayer2
   }) {
     const startedAt = performance.now();
-    const syncToken = Date.now();
     const remoteApiBase = String(apiUrl || "").trim().replace(/\/+$/, "");
-    const candidateUrls = [];
+    const candidateRequests = [
+      {
+        url: "data/marseille_rues_light.geojson",
+        options: {}
+      }
+    ];
     if (remoteApiBase) {
-      candidateUrls.push(`${remoteApiBase}/api/streets-light?v=${syncToken}`);
+      candidateRequests.push({
+        url: `${remoteApiBase}/api/streets-light`,
+        options: { cache: "no-store" }
+      });
     }
-    candidateUrls.push(`data/marseille_rues_light.geojson?v=${syncToken}`);
     let response = null;
     let selectedUrl = "";
     let lastError = null;
-    for (const url of candidateUrls) {
+    for (const candidate of candidateRequests) {
       try {
-        const nextResponse = await fetch(url, { cache: "no-store" });
+        const nextResponse = await fetch(candidate.url, candidate.options);
         if (!nextResponse.ok) {
-          lastError = new Error(`Erreur HTTP ${nextResponse.status} (${url})`);
+          lastError = new Error(`Erreur HTTP ${nextResponse.status} (${candidate.url})`);
           continue;
         }
         response = nextResponse;
-        selectedUrl = url;
+        selectedUrl = candidate.url;
         break;
       } catch (error) {
         lastError = error;
@@ -2009,7 +2015,7 @@
       streetLayersById: streetLayersById2,
       streetLayersByName: streetLayersByName2,
       streetsLayer: streetsLayer2,
-      loadedFrom: selectedUrl || candidateUrls[0],
+      loadedFrom: selectedUrl || candidateRequests[0].url,
       loadedMs: (performance.now() - startedAt).toFixed(0)
     };
   }
@@ -2122,9 +2128,7 @@
     if (Array.isArray(runtimeMonuments)) {
       sourceFeatures = runtimeMonuments;
     } else {
-      const response = await fetch(`data/marseille_monuments.geojson?v=${Date.now()}`, {
-        cache: "no-store"
-      });
+      const response = await fetch("data/marseille_monuments.geojson");
       if (!response.ok) {
         throw new Error(`Impossible de charger les monuments (HTTP ${response.status}).`);
       }
@@ -3974,6 +3978,8 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   ];
   var swRegistrationPromise = null;
   var notificationConfigCache = null;
+  var backendWarmupPromise = null;
+  var runtimeContentLoadPromise = null;
   function normalizeStreetInfoMapPayload(entries) {
     if (!entries || typeof entries !== "object" || Array.isArray(entries)) {
       return null;
@@ -4082,7 +4088,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   }
   async function loadStreetInfosFromStaticFile() {
     try {
-      const response = await fetch("data/street_infos.json?v=" + Date.now());
+      const response = await fetch("data/street_infos.json");
       const data = await response.json();
       const normalizedFamousInfos = normalizeStreetInfoMapPayload(data == null ? void 0 : data.famous);
       const normalizedMainInfos = normalizeStreetInfoMapPayload(data == null ? void 0 : data.main);
@@ -4094,7 +4100,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     }
   }
   async function loadPublicContentFromApi() {
-    const response = await fetch(`${API_URL}/api/content/public?v=${Date.now()}`, {
+    const response = await fetch(`${API_URL}/api/content/public`, {
       cache: "no-store"
     });
     if (!response.ok) {
@@ -4104,14 +4110,53 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     applyPublicContentPayload(payload);
     return payload;
   }
-  async function loadStreetInfos() {
-    await loadStreetInfosFromStaticFile();
-    try {
-      await loadPublicContentFromApi();
-      console.log("Runtime content loaded from API");
-    } catch (error) {
-      console.warn("Runtime content API unavailable, fallback to static content.", error);
+  function applyRuntimeContentRefresh() {
+    const modeSelect = document.getElementById("mode-select");
+    if (!modeSelect) {
+      return;
     }
+    modeSelect.dispatchEvent(new Event("change"));
+    refreshLectureStreetSearchForCurrentMode({ preserveQuery: true });
+    refreshLectureTooltipsIfNeeded();
+  }
+  function warmBackendConnection() {
+    if (backendWarmupPromise) {
+      return backendWarmupPromise;
+    }
+    backendWarmupPromise = fetch(`${API_URL}/api/health?prewarm=1`, {
+      cache: "no-store"
+    }).then((response) => response.ok).catch(() => false).finally(() => {
+      backendWarmupPromise = null;
+    });
+    return backendWarmupPromise;
+  }
+  function checkBackendAvailability() {
+    return fetch(`${API_URL}/api/health`, {
+      method: "HEAD",
+      cache: "no-store"
+    }).then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return response;
+    });
+  }
+  function loadStreetInfos() {
+    if (runtimeContentLoadPromise) {
+      return runtimeContentLoadPromise;
+    }
+    runtimeContentLoadPromise = loadStreetInfosFromStaticFile().then(async () => {
+      try {
+        await loadPublicContentFromApi();
+        applyRuntimeContentRefresh();
+        console.log("Runtime content loaded from API");
+      } catch (error) {
+        console.warn("Runtime content API unavailable, fallback to static content.", error);
+      }
+    }).finally(() => {
+      runtimeContentLoadPromise = null;
+    });
+    return runtimeContentLoadPromise;
   }
   function normalizeName(e) {
     return String(e || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[’`´]/g, "'").replace(/[-‐‑‒–—]/g, "-").replace(/\s*-\s*/g, "-").replace(/\s+/g, " ");
@@ -5928,8 +5973,9 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       t2 && (t2.style.display = e2 ? "block" : "none");
     }
     initTooltipPopup(), window.addEventListener("offline", () => L2(true)), window.addEventListener("online", () => {
-      fetch(API_URL + "/api/leaderboards", { method: "HEAD" }).then(() => L2(false)).catch(() => L2(true));
-    }), navigator.onLine ? fetch(API_URL + "/api/leaderboards", { method: "HEAD" }).catch(
+      warmBackendConnection();
+      checkBackendAvailability().then(() => L2(false)).catch(() => L2(true));
+    }), navigator.onLine ? checkBackendAvailability().catch(
       () => L2(true)
     ) : L2(true), e && e.addEventListener("click", () => {
       isDailyMode && window._dailyGameOver ? stopSessionManually() : isSessionRunning ? stopSessionManually() : startNewSession();
@@ -6102,7 +6148,8 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     I && (I.classList.add("hidden"), I.innerHTML = ""), clearSessionShareSlot();
   }
   document.addEventListener("DOMContentLoaded", async () => {
-    await loadStreetInfos();
+    warmBackendConnection();
+    loadStreetInfos();
     setMapStatus("Chargement", "loading"), initMap(), initUI(), initFriendChallengeModeFromUrl(), startTimersLoop(), loadStreets(), loadQuartiers(), loadMonuments(), loadAllLeaderboards(), document.body.classList.add("app-ready");
   });
   var infoEl = document.getElementById("street-info");
