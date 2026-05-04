@@ -865,21 +865,29 @@ async function onRunOsmSync() {
   }
 
   const confirmed = window.confirm(
-    "Lancer la synchronisation OSM maintenant ?\n\nCette operation peut durer 1 a 2 minutes.",
+    "Lancer la synchronisation OSM maintenant ?\n\nLe workflow GitHub mettra a jour les donnees de carte et declenchera le deploiement.",
   );
   if (!confirmed) {
     return;
   }
 
   refs.runOsmSyncBtn.disabled = true;
-  setGlobalStatus("Synchronisation OSM en cours...", "info");
-  setOsmSyncOutput("Synchronisation OSM en cours...");
+  setGlobalStatus("Declenchement de la synchronisation OSM...", "info");
+  setOsmSyncOutput("Declenchement du workflow GitHub...");
 
   try {
     const payload = await apiRequest("/api/editor/osm-sync", {
       method: "POST",
-      body: {},
+      body: { target: "auto" },
     });
+
+    if (payload?.dispatched) {
+      const dispatch = payload.dispatch || {};
+      const label = `${dispatch.repository || "depot GitHub"} / ${dispatch.workflow || "sync-osm.yml"}`;
+      setGlobalStatus(`Workflow OSM lance (${label}).`, "success");
+      setOsmSyncOutput(payload?.output || "Workflow GitHub lance.");
+      return;
+    }
 
     const durationSeconds = Number.isFinite(payload?.durationMs)
       ? (payload.durationMs / 1000).toFixed(1)

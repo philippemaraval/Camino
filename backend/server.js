@@ -3,6 +3,7 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const fs = require('fs');
+const https = require('https');
 const path = require('path');
 const { spawn } = require('child_process');
 const webPush = require('web-push');
@@ -129,6 +130,18 @@ const MAX_NAME_LENGTH = 160;
 const MAX_INFO_LENGTH = 5000;
 const OSM_SYNC_TIMEOUT_MS = readEnvIntegerInRange('OSM_SYNC_TIMEOUT_MS', 12 * 60 * 1000, 30_000, 30 * 60 * 1000);
 const OSM_SYNC_LOG_MAX_CHARS = 120_000;
+const GITHUB_OSM_SYNC_TOKEN = readFirstDefinedEnv([
+    'GITHUB_OSM_SYNC_TOKEN',
+    'GITHUB_SYNC_TOKEN',
+    'GITHUB_TOKEN',
+]);
+const GITHUB_OSM_SYNC_REPOSITORY = readFirstDefinedEnv([
+    'GITHUB_OSM_SYNC_REPOSITORY',
+    'GITHUB_SYNC_REPOSITORY',
+    'GITHUB_REPOSITORY',
+], 'philippemaraval/Camino');
+const GITHUB_OSM_SYNC_WORKFLOW_ID = process.env.GITHUB_OSM_SYNC_WORKFLOW_ID || 'sync-osm.yml';
+const GITHUB_OSM_SYNC_REF = process.env.GITHUB_OSM_SYNC_REF || 'main';
 const PUBLIC_CONTENT_CACHE_TTL_MS = readEnvIntegerInRange('PUBLIC_CONTENT_CACHE_TTL_MS', 5 * 60 * 1000, 0, 24 * 60 * 60 * 1000);
 const LEADERBOARDS_CACHE_TTL_MS = readEnvIntegerInRange('LEADERBOARDS_CACHE_TTL_MS', 60 * 1000, 0, 24 * 60 * 60 * 1000);
 const DAILY_LEADERBOARD_CACHE_TTL_MS = readEnvIntegerInRange('DAILY_LEADERBOARD_CACHE_TTL_MS', 60 * 1000, 0, 24 * 60 * 60 * 1000);
@@ -905,6 +918,87 @@ function runOsmSyncScript(timeoutMs = OSM_SYNC_TIMEOUT_MS) {
     });
 }
 
+function githubJsonRequest({ method, apiPath, token, body = null }) {
+    return new Promise((resolve, reject) => {
+        const requestBody = body ? JSON.stringify(body) : '';
+        const req = https.request(
+            {
+                hostname: 'api.github.com',
+                path: apiPath,
+                method,
+                headers: {
+                    Accept: 'application/vnd.github+json',
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(requestBody),
+                    'User-Agent': 'Camino-OSM-Sync',
+                    'X-GitHub-Api-Version': '2022-11-28',
+                },
+            },
+            (response) => {
+                const chunks = [];
+                response.on('data', (chunk) => chunks.push(chunk));
+                response.on('end', () => {
+                    const text = Buffer.concat(chunks).toString('utf8');
+                    let payload = null;
+                    if (text) {
+                        try {
+                            payload = JSON.parse(text);
+                        } catch (error) {
+                            payload = { message: text };
+                        }
+                    }
+
+                    if (response.statusCode >= 200 && response.statusCode < 300) {
+                        resolve({ statusCode: response.statusCode, payload });
+                        return;
+                    }
+
+                    const message = payload?.message || `GitHub API HTTP ${response.statusCode}`;
+                    reject(new Error(message));
+                });
+            },
+        );
+
+        req.on('error', reject);
+        if (requestBody) {
+            req.write(requestBody);
+        }
+        req.end();
+    });
+}
+
+async function dispatchOsmSyncWorkflow({ requestedBy = 'admin' } = {}) {
+    if (!GITHUB_OSM_SYNC_TOKEN) {
+        throw new Error('Token GitHub absent. Definir GITHUB_OSM_SYNC_TOKEN pour declencher la sync depot depuis l admin.');
+    }
+
+    const repository = GITHUB_OSM_SYNC_REPOSITORY.trim();
+    if (!/^[^/\s]+\/[^/\s]+$/.test(repository)) {
+        throw new Error(`Depot GitHub invalide pour la sync OSM: ${repository || '(vide)'}`);
+    }
+
+    const encodedWorkflowId = encodeURIComponent(GITHUB_OSM_SYNC_WORKFLOW_ID);
+    const apiPath = `/repos/${repository}/actions/workflows/${encodedWorkflowId}/dispatches`;
+    await githubJsonRequest({
+        method: 'POST',
+        apiPath,
+        token: GITHUB_OSM_SYNC_TOKEN,
+        body: {
+            ref: GITHUB_OSM_SYNC_REF,
+            inputs: {
+                source: requestedBy,
+            },
+        },
+    });
+
+    return {
+        repository,
+        workflow: GITHUB_OSM_SYNC_WORKFLOW_ID,
+        ref: GITHUB_OSM_SYNC_REF,
+    };
+}
+
 function parseMonumentCoordinates(rawEntry) {
     if (!rawEntry || typeof rawEntry !== 'object' || Array.isArray(rawEntry)) {
         return null;
@@ -1668,6 +1762,31 @@ app.get('/api/editor/content', authenticateToken, requireContentEditor, asyncHan
 app.post('/api/editor/osm-sync', authenticateToken, requireContentEditor, asyncHandler(async (req, res) => {
     if (osmSyncInProgress) {
         return res.status(409).json({ error: 'Une synchronisation OSM est deja en cours.' });
+    }
+
+    const requestedTarget = String(req.body?.target || 'auto').trim().toLowerCase();
+    const shouldUseGitHubWorkflow = requestedTarget !== 'local';
+    if (shouldUseGitHubWorkflow) {
+        const currentUser = await getCurrentAuthenticatedUser(req.user);
+        try {
+            const dispatch = await dispatchOsmSyncWorkflow({
+                requestedBy: currentUser?.username || req.user?.username || 'admin',
+            });
+            return res.status(202).json({
+                success: true,
+                dispatched: true,
+                target: 'github',
+                dispatch,
+                output: `Workflow GitHub lance: ${dispatch.repository}/${dispatch.workflow} sur ${dispatch.ref}.`,
+            });
+        } catch (error) {
+            if (requestedTarget === 'github') {
+                return res.status(503).json({
+                    error: `Impossible de declencher la synchronisation GitHub: ${error.message}`,
+                });
+            }
+            console.warn('GitHub OSM sync dispatch unavailable, falling back to local sync:', error.message);
+        }
     }
 
     osmSyncInProgress = true;

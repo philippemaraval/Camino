@@ -16,6 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
+const { execFileSync } = require('child_process');
 const osmtogeojson = require('osmtogeojson');
 const { shouldKeepStreetForGame, normalizeStreetNameForFilter } = require('../street_filter');
 
@@ -29,6 +30,11 @@ const QUARTIERS_FILE_CANDIDATES = [
     path.join(DATA_DIR, 'marseille_quartiers_111.geojson'),
     path.join(PROJECT_DIR, 'dist', 'data', 'marseille_quartiers_111.geojson'),
 ].filter(Boolean);
+const QUARTIERS_GIT_BLOB_CANDIDATES = [
+    'backend/data/marseille_quartiers_111.geojson',
+    'data/marseille_quartiers_111.geojson',
+    'dist/data/marseille_quartiers_111.geojson',
+];
 const OUTPUT_ENRICHI = path.join(DATA_DIR, 'marseille_rues_enrichi.geojson');
 const OUTPUT_LIGHT = path.join(DATA_DIR, 'marseille_rues_light.geojson');
 const OUTPUT_SYNC_META = path.join(DATA_DIR, 'map_sync_meta.json');
@@ -138,6 +144,44 @@ function resolveFirstExistingFile(candidates) {
         }
     }
     return null;
+}
+
+function readTextFromGitHead(relativePath) {
+    try {
+        return execFileSync('git', ['show', `HEAD:${relativePath}`], {
+            cwd: PROJECT_DIR,
+            encoding: 'utf8',
+            maxBuffer: 20 * 1024 * 1024,
+            stdio: ['ignore', 'pipe', 'ignore'],
+        });
+    } catch (error) {
+        return null;
+    }
+}
+
+function loadQuartiersData() {
+    const quartiersFile = resolveFirstExistingFile(QUARTIERS_FILE_CANDIDATES);
+    if (quartiersFile) {
+        return {
+            data: JSON.parse(fs.readFileSync(quartiersFile, 'utf8')),
+            source: path.relative(PROJECT_DIR, quartiersFile),
+        };
+    }
+
+    for (const relativePath of QUARTIERS_GIT_BLOB_CANDIDATES) {
+        const raw = readTextFromGitHead(relativePath);
+        if (!raw) {
+            continue;
+        }
+        return {
+            data: JSON.parse(raw),
+            source: `git:HEAD:${relativePath}`,
+        };
+    }
+
+    throw new Error(
+        `Fichier quartiers introuvable. Candidats disque: ${QUARTIERS_FILE_CANDIDATES.join(', ')}. Candidats Git: ${QUARTIERS_GIT_BLOB_CANDIDATES.join(', ')}`
+    );
 }
 
 function buildOverpassStatusUrl(interpreterUrl) {
@@ -389,18 +433,12 @@ async function main() {
 
     // 1. Charger les quartiers
     console.log('📂 Chargement des quartiers...');
-    const quartiersFile = resolveFirstExistingFile(QUARTIERS_FILE_CANDIDATES);
-    if (!quartiersFile) {
-        throw new Error(
-            `Fichier quartiers introuvable. Candidats: ${QUARTIERS_FILE_CANDIDATES.join(', ')}`
-        );
-    }
-    const quartiersData = JSON.parse(fs.readFileSync(quartiersFile, 'utf8'));
+    const { data: quartiersData, source: quartiersSource } = loadQuartiersData();
     const quartiers = (quartiersData.features || []).map((feature) => ({
         ...feature,
         _centroid: computeCentroid(feature.geometry)
     }));
-    console.log(`   ${quartiers.length} quartiers chargés (${path.relative(PROJECT_DIR, quartiersFile)}).\n`);
+    console.log(`   ${quartiers.length} quartiers chargés (${quartiersSource}).\n`);
 
     // 2. Requête Overpass
     console.log('🌐 Requête Overpass API (peut prendre 1-2 minutes)...');

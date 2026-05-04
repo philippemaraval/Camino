@@ -5,10 +5,19 @@ on:
     # Every Monday at 6:00 UTC
     - cron: '0 6 * * 1'
   workflow_dispatch:
+    inputs:
+      source:
+        description: 'Source that requested the sync'
+        required: false
+        default: 'manual'
 
 permissions:
   contents: write
   pull-requests: write
+
+concurrency:
+  group: sync-osm
+  cancel-in-progress: false
 
 jobs:
   sync:
@@ -28,6 +37,10 @@ jobs:
 
       - name: Run OSM sync
         run: node scripts/sync_osm.js
+
+      - name: Validate generated files
+        run: |
+          node -e "const fs=require('fs'); for (const file of ['data/marseille_rues_light.geojson','data/marseille_rues_enrichi.geojson','backend/data/marseille_rues_light.geojson','backend/data/streets_index.json','data/map_sync_meta.json']) { const parsed=JSON.parse(fs.readFileSync(file,'utf8')); if (!parsed) throw new Error(file + ' is empty'); }"
 
       - name: Check for changes
         id: check
