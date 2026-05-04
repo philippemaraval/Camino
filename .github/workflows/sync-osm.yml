@@ -58,6 +58,7 @@ jobs:
         if: steps.check.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
+          token: ${{ secrets.OSM_SYNC_PR_TOKEN || github.token }}
           commit-message: 'sync: update street data from OSM'
           title: '🗺️ Weekly OSM Street Sync'
           body: |
@@ -69,3 +70,9 @@ jobs:
           branch: osm-sync-auto
           delete-branch: true
           labels: osm-sync
+          add-paths: |
+            data/marseille_rues_light.geojson
+            data/marseille_rues_enrichi.geojson
+            data/map_sync_meta.json
+            backend/data/marseille_rues_light.geojson
+            backend/data/streets_index.json
