@@ -86,6 +86,22 @@ function setOsmSyncOutput(message) {
   refs.osmSyncOutput.textContent = String(message || "").trim() || "Aucun log disponible.";
 }
 
+function formatOsmSyncActiveState(active) {
+  if (!active || typeof active !== "object") {
+    return "";
+  }
+  const startedAt = active.startedAt ? new Date(active.startedAt) : null;
+  const startedLabel =
+    startedAt && !Number.isNaN(startedAt.getTime())
+      ? startedAt.toLocaleString("fr-FR")
+      : active.startedAt || "?";
+  const ageSeconds = Number.isFinite(active.ageMs)
+    ? Math.max(0, Math.round(active.ageMs / 1000))
+    : null;
+  const ageLabel = ageSeconds !== null ? `, depuis ${ageSeconds}s` : "";
+  return `Sync locale active: ${active.requestedBy || "admin"}, demarree ${startedLabel}${ageLabel}.`;
+}
+
 function setUiAuthenticated(isAuthenticated) {
   refs.loginSection.classList.toggle("hidden", isAuthenticated);
   refs.editorSection.classList.toggle("hidden", !isAuthenticated);
@@ -914,7 +930,8 @@ async function onRunOsmSync() {
   } catch (error) {
     const output = error?.payload?.output || "";
     setGlobalStatus(`Echec synchronisation OSM: ${error.message}`, "error");
-    setOsmSyncOutput(output || `Erreur: ${error.message}`);
+    const activeState = formatOsmSyncActiveState(error?.payload?.active);
+    setOsmSyncOutput(output || activeState || `Erreur: ${error.message}`);
   } finally {
     refs.runOsmSyncBtn.disabled = false;
   }

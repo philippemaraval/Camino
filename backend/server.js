@@ -130,6 +130,7 @@ const MAX_NAME_LENGTH = 160;
 const MAX_INFO_LENGTH = 5000;
 const OSM_SYNC_TIMEOUT_MS = readEnvIntegerInRange('OSM_SYNC_TIMEOUT_MS', 12 * 60 * 1000, 30_000, 30 * 60 * 1000);
 const OSM_SYNC_LOG_MAX_CHARS = 120_000;
+const OSM_SYNC_STALE_LOCK_MS = OSM_SYNC_TIMEOUT_MS + 60_000;
 const GITHUB_OSM_SYNC_TOKEN = readFirstDefinedEnv([
     'GITHUB_OSM_SYNC_TOKEN',
     'GITHUB_SYNC_TOKEN',
@@ -153,7 +154,7 @@ const OSM_SYNC_WATCHED_FILES = [
     path.join(__dirname, '..', 'data', 'map_sync_meta.json'),
 ];
 const MAP_SYNC_META_FILE_PATH = path.join(__dirname, '..', 'data', 'map_sync_meta.json');
-let osmSyncInProgress = false;
+let osmSyncState = null;
 const publicContentCache = createAsyncTtlCache(PUBLIC_CONTENT_CACHE_TTL_MS);
 const allLeaderboardsCache = createAsyncTtlCache(LEADERBOARDS_CACHE_TTL_MS);
 const monthlyLeaderboardsCache = createAsyncTtlCache(LEADERBOARDS_CACHE_TTL_MS);
@@ -916,6 +917,45 @@ function runOsmSyncScript(timeoutMs = OSM_SYNC_TIMEOUT_MS) {
             });
         });
     });
+}
+
+function getActiveLocalOsmSyncState() {
+    if (!osmSyncState) {
+        return null;
+    }
+
+    const startedAtMs = Number(osmSyncState.startedAtMs);
+    const ageMs = Number.isFinite(startedAtMs) ? Date.now() - startedAtMs : Number.POSITIVE_INFINITY;
+    if (ageMs > OSM_SYNC_STALE_LOCK_MS) {
+        console.warn(`Resetting stale OSM sync lock after ${Math.round(ageMs / 1000)}s.`);
+        osmSyncState = null;
+        return null;
+    }
+
+    return {
+        ...osmSyncState,
+        ageMs,
+    };
+}
+
+function startLocalOsmSyncState({ requestedBy = 'admin' } = {}) {
+    const active = getActiveLocalOsmSyncState();
+    if (active) {
+        return null;
+    }
+
+    const startedAtMs = Date.now();
+    osmSyncState = {
+        target: 'local',
+        requestedBy,
+        startedAt: new Date(startedAtMs).toISOString(),
+        startedAtMs,
+    };
+    return osmSyncState;
+}
+
+function clearLocalOsmSyncState() {
+    osmSyncState = null;
 }
 
 function githubJsonRequest({ method, apiPath, token, body = null }) {
@@ -1759,18 +1799,24 @@ app.get('/api/editor/content', authenticateToken, requireContentEditor, asyncHan
     return res.json(snapshot);
 }));
 
-app.post('/api/editor/osm-sync', authenticateToken, requireContentEditor, asyncHandler(async (req, res) => {
-    if (osmSyncInProgress) {
-        return res.status(409).json({ error: 'Une synchronisation OSM est deja en cours.' });
-    }
+app.get('/api/editor/osm-sync/status', authenticateToken, requireContentEditor, asyncHandler(async (req, res) => {
+    const active = getActiveLocalOsmSyncState();
+    return res.json({
+        inProgress: Boolean(active),
+        active,
+    });
+}));
 
+app.post('/api/editor/osm-sync', authenticateToken, requireContentEditor, asyncHandler(async (req, res) => {
     const requestedTarget = String(req.body?.target || 'auto').trim().toLowerCase();
     const shouldUseGitHubWorkflow = requestedTarget !== 'local';
+    const currentUser = await getCurrentAuthenticatedUser(req.user);
+    const requestedBy = currentUser?.username || req.user?.username || 'admin';
+
     if (shouldUseGitHubWorkflow) {
-        const currentUser = await getCurrentAuthenticatedUser(req.user);
         try {
             const dispatch = await dispatchOsmSyncWorkflow({
-                requestedBy: currentUser?.username || req.user?.username || 'admin',
+                requestedBy,
             });
             return res.status(202).json({
                 success: true,
@@ -1789,7 +1835,15 @@ app.post('/api/editor/osm-sync', authenticateToken, requireContentEditor, asyncH
         }
     }
 
-    osmSyncInProgress = true;
+    const startedState = startLocalOsmSyncState({ requestedBy });
+    if (!startedState) {
+        const active = getActiveLocalOsmSyncState();
+        return res.status(409).json({
+            error: 'Une synchronisation OSM locale est deja en cours.',
+            active,
+        });
+    }
+
     const startedAtIso = new Date().toISOString();
     const startedAtMs = Date.now();
     const beforeSnapshot = captureOsmWatchedFilesSnapshot();
@@ -1867,7 +1921,7 @@ app.post('/api/editor/osm-sync', authenticateToken, requireContentEditor, asyncH
             error: `Impossible de lancer la synchronisation OSM: ${error.message}`,
         });
     } finally {
-        osmSyncInProgress = false;
+        clearLocalOsmSyncState();
     }
 }));
 
