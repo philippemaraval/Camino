@@ -1233,10 +1233,10 @@ async function getEffectiveStreetInfos() {
 
     const effective = {
         famous: Object.prototype.hasOwnProperty.call(parsed, 'famous')
-            ? normalizeStreetInfoEntries(parsed.famous)
+            ? { ...fallback.famous, ...normalizeStreetInfoEntries(parsed.famous) }
             : fallback.famous,
         main: Object.prototype.hasOwnProperty.call(parsed, 'main')
-            ? normalizeStreetInfoEntries(parsed.main)
+            ? { ...fallback.main, ...normalizeStreetInfoEntries(parsed.main) }
             : fallback.main,
     };
 
