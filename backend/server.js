@@ -3250,7 +3250,9 @@ async function sendDailyReminderPushesForDate(dateStr) {
             sent += 1;
         } catch (err) {
             const statusCode = Number(err?.statusCode || 0);
-            if (statusCode === 404 || statusCode === 410) {
+            // 404/410 = endpoint gone; 401/403 = VAPID key mismatch (stale subscription).
+            // In all cases the subscription is unrecoverable and must be removed.
+            if (statusCode === 404 || statusCode === 410 || statusCode === 401 || statusCode === 403) {
                 await db.removePushSubscriptionByEndpoint(endpoint);
                 removed += 1;
             } else {

@@ -662,6 +662,11 @@ async function enableDailyReminder() {
     return;
   }
 
+  if (!isPushReminderSupported()) {
+    showMessage("Notifications push non disponibles sur ce navigateur.", "error");
+    return;
+  }
+
   if (requiresInstalledAppForMobilePush()) {
     setDailyReminderStatus(
       "Installe Camino sur l’écran d’accueil pour activer les notifications sur iPhone/iPad.",
@@ -700,6 +705,43 @@ async function enableDailyReminder() {
     }
 
     let subscription = await registration.pushManager.getSubscription();
+
+    // Recycle stale subscription when VAPID keys have changed (e.g. after server redeploy).
+    if (subscription) {
+      try {
+        const existingKeyBuffer = subscription.options?.applicationServerKey;
+        const expectedKey = toPushServerKeyUint8Array(config.publicKey);
+        let keyMismatch = false;
+
+        if (existingKeyBuffer) {
+          const existingKey = new Uint8Array(existingKeyBuffer);
+          if (existingKey.length !== expectedKey.length) {
+            keyMismatch = true;
+          } else {
+            for (let i = 0; i < existingKey.length; i += 1) {
+              if (existingKey[i] !== expectedKey[i]) {
+                keyMismatch = true;
+                break;
+              }
+            }
+          }
+        } else {
+          // Cannot verify key — treat as stale to be safe.
+          keyMismatch = true;
+        }
+
+        if (keyMismatch) {
+          console.warn("Push subscription VAPID key mismatch — recycling subscription.");
+          await subscription.unsubscribe().catch(() => { });
+          subscription = null;
+        }
+      } catch (keyCheckError) {
+        console.warn("Push subscription key check failed — recycling subscription.", keyCheckError);
+        await subscription.unsubscribe().catch(() => { });
+        subscription = null;
+      }
+    }
+
     if (!subscription) {
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
