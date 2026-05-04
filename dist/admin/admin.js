@@ -3,7 +3,9 @@ const API_BASE_CANDIDATES =
   window.location.hostname === "127.0.0.1" ||
   window.location.protocol === "file:"
     ? ["http://localhost:3000"]
-    : [window.location.origin, "https://camino2.onrender.com"];
+    : ["https://camino2.onrender.com", window.location.origin];
+
+const API_REQUEST_TIMEOUT_MS = 20000;
 
 const STORAGE_KEY = "camino_editor_user";
 
@@ -138,12 +140,18 @@ async function apiRequest(path, { method = "GET", body, auth = true } = {}) {
   let lastNetworkError = null;
   for (let index = 0; index < API_BASE_CANDIDATES.length; index += 1) {
     const base = API_BASE_CANDIDATES[index];
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, API_REQUEST_TIMEOUT_MS);
     try {
       const candidateResponse = await fetch(`${base}${path}`, {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       const candidateText = await candidateResponse.text();
       let candidatePayload = null;
       if (candidateText) {
@@ -175,9 +183,13 @@ async function apiRequest(path, { method = "GET", body, auth = true } = {}) {
       responseText = candidateText;
       break;
     } catch (error) {
+      clearTimeout(timeoutId);
       lastNetworkError = error;
       if (index < API_BASE_CANDIDATES.length - 1) {
         continue;
+      }
+      if (error?.name === "AbortError") {
+        throw new Error(`API timeout apres ${Math.round(API_REQUEST_TIMEOUT_MS / 1000)}s`);
       }
       throw error;
     }
