@@ -143,6 +143,7 @@ const GITHUB_OSM_SYNC_REPOSITORY = readFirstDefinedEnv([
 ], 'philippemaraval/Camino');
 const GITHUB_OSM_SYNC_WORKFLOW_ID = process.env.GITHUB_OSM_SYNC_WORKFLOW_ID || 'sync-osm.yml';
 const GITHUB_OSM_SYNC_REF = process.env.GITHUB_OSM_SYNC_REF || 'main';
+const GITHUB_API_TIMEOUT_MS = readEnvIntegerInRange('GITHUB_API_TIMEOUT_MS', 15_000, 1_000, 60_000);
 const PUBLIC_CONTENT_CACHE_TTL_MS = readEnvIntegerInRange('PUBLIC_CONTENT_CACHE_TTL_MS', 5 * 60 * 1000, 0, 24 * 60 * 60 * 1000);
 const LEADERBOARDS_CACHE_TTL_MS = readEnvIntegerInRange('LEADERBOARDS_CACHE_TTL_MS', 60 * 1000, 0, 24 * 60 * 60 * 1000);
 const DAILY_LEADERBOARD_CACHE_TTL_MS = readEnvIntegerInRange('DAILY_LEADERBOARD_CACHE_TTL_MS', 60 * 1000, 0, 24 * 60 * 60 * 1000);
@@ -1000,6 +1001,9 @@ function githubJsonRequest({ method, apiPath, token, body = null }) {
             },
         );
 
+        req.setTimeout(GITHUB_API_TIMEOUT_MS, () => {
+            req.destroy(new Error(`GitHub API timeout after ${Math.round(GITHUB_API_TIMEOUT_MS / 1000)}s`));
+        });
         req.on('error', reject);
         if (requestBody) {
             req.write(requestBody);
@@ -1808,7 +1812,7 @@ app.get('/api/editor/osm-sync/status', authenticateToken, requireContentEditor, 
 }));
 
 app.post('/api/editor/osm-sync', authenticateToken, requireContentEditor, asyncHandler(async (req, res) => {
-    const requestedTarget = String(req.body?.target || 'auto').trim().toLowerCase();
+    const requestedTarget = String(req.body?.target || 'github').trim().toLowerCase();
     const shouldUseGitHubWorkflow = requestedTarget !== 'local';
     const currentUser = await getCurrentAuthenticatedUser(req.user);
     const requestedBy = currentUser?.username || req.user?.username || 'admin';

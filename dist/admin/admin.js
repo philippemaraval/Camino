@@ -906,7 +906,7 @@ async function onRunOsmSync() {
   try {
     const payload = await apiRequest("/api/editor/osm-sync", {
       method: "POST",
-      body: { target: "auto" },
+      body: { target: "github" },
     });
 
     if (payload?.dispatched) {
