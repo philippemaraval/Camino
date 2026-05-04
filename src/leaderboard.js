@@ -456,14 +456,17 @@ export function loadAllLeaderboards() {
 
         const table = document.createElement("table");
         table.className = "leaderboard-table";
-        table.innerHTML = "<thead><tr><th>#</th><th>Joueur</th><th>Essais</th></tr></thead>";
+        table.innerHTML = "<thead><tr><th>#</th><th>Joueur</th><th>Résultat</th></tr></thead>";
 
         const tbody = document.createElement("tbody");
         dailyRows.forEach((row, index) => {
           const tr = document.createElement("tr");
           const rank = (index === 0 ? "🥇 " : index === 1 ? "🥈 " : index === 2 ? "🥉 " : "") || `${index + 1}`;
           const playerAvatar = row.avatar || "👤";
-          tr.innerHTML = `<td>${rank}</td><td><span class="leaderboard-avatar">${playerAvatar}</span>${row.username || "Anonyme"}</td><td>${row.attempts_count}/7</td>`;
+          const resultText = row.success 
+            ? `${row.attempts_count}/7` 
+            : `❌ ${Math.round(row.best_distance_meters || 0)}m`;
+          tr.innerHTML = `<td>${rank}</td><td><span class="leaderboard-avatar">${playerAvatar}</span>${row.username || "Anonyme"}</td><td>${resultText}</td>`;
           tbody.appendChild(tr);
         });
         table.appendChild(tbody);

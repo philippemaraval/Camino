@@ -3206,7 +3206,7 @@ app.post('/api/daily/guess', authenticateToken, asyncHandler(async (req, res) =>
             result.targetGeometry = target ? await getTargetGeometry(target) : null;
         }
 
-        if (result.success) {
+        if (result.success || result.attempts_count >= 7) {
             invalidateAsyncTtlCache(dailyLeaderboardCache);
         }
 

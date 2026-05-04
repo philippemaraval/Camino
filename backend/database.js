@@ -838,11 +838,15 @@ async function updateDailyUserAttempt(userId, date, distanceMeters, isSuccess) {
 
 async function getDailyLeaderboard(date) {
   const res = await pool.query(
-    `SELECT u.username, u.avatar, d.attempts_count, d.success
+    `SELECT u.username, u.avatar, d.attempts_count, d.success, d.best_distance_meters
      FROM daily_user_attempts d
      JOIN users u ON d.user_id = u.id
-     WHERE d.date = $1 AND d.success = TRUE
-     ORDER BY d.attempts_count ASC, d.last_attempt_at ASC
+     WHERE d.date = $1 AND (d.success = TRUE OR d.attempts_count >= 7)
+     ORDER BY 
+       d.success DESC,
+       CASE WHEN d.success = TRUE THEN d.attempts_count ELSE NULL END ASC,
+       CASE WHEN d.success = FALSE THEN d.best_distance_meters ELSE NULL END ASC,
+       d.last_attempt_at ASC
      LIMIT 20`,
     [date]
   );
