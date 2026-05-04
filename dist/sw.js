@@ -3,9 +3,9 @@ const CACHE_NAME = "camino-v7";
 const CORE_PRECACHE_URLS = [
   "/",
   "/index.html",
-  "/style.css.min",
-  "/main.js.min",
-  "/data_rules.js.min",
+  "/style.css",
+  "/main.js",
+  "/data_rules.js",
   "/site.webmanifest",
 ];
 
