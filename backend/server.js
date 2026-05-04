@@ -1628,7 +1628,7 @@ app.get('/api/streets-light', asyncHandler(async (req, res) => {
         return res.status(404).json({ error: 'Streets file unavailable' });
     }
 
-    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
     res.type('application/geo+json');
     return res.sendFile(selectedPath);
 }));

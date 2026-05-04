@@ -121,6 +121,20 @@ let notificationConfigCache = null;
 let backendWarmupPromise = null;
 let runtimeContentLoadPromise = null;
 
+function scheduleAfterStartup(callback, delayMs = 0) {
+  const run = () => {
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(callback, { timeout: 2500 });
+      return;
+    }
+    setTimeout(callback, 0);
+  };
+
+  requestAnimationFrame(() => {
+    setTimeout(run, delayMs);
+  });
+}
+
 function normalizeStreetInfoMapPayload(entries) {
   if (!entries || typeof entries !== "object" || Array.isArray(entries)) {
     return null;
@@ -945,6 +959,8 @@ let sessionStreets = [],
 let streetsLoadingPromise = null;
 let areStreetsReady = false;
 let mapInvalidateTimeoutIds = [];
+let quartiersLoadingPromise = null;
+let monumentsLoadingPromise = null;
 let monumentsContentSyncPromise = null;
 let monumentsSessionRefreshPending = !1;
 
@@ -1365,7 +1381,7 @@ function setGameModeSelection(gameMode) {
       updateLayoutSessionState());
   updateGameModeControls();
   list && ((list.scrollTop = 0), list.classList.remove("visible"));
-  "lecture" === gameMode && requestAnimationFrame(() => startNewSession());
+  "lecture" === gameMode && requestAnimationFrame(() => prepareAndStartNewSession());
 }
 
 function setQuartierSelectionByName(quartierName) {
@@ -2579,7 +2595,7 @@ function initUI() {
             updateGameModeControls(),
             (v.scrollTop = 0),
             v.classList.remove("visible"),
-            "lecture" === t && requestAnimationFrame(() => startNewSession()));
+            "lecture" === t && requestAnimationFrame(() => prepareAndStartNewSession()));
         });
       })),
     i &&
@@ -2623,8 +2639,7 @@ function initUI() {
     initInstallPrompt({
       isStandaloneDisplayModeFn: isStandaloneDisplayMode,
       showMessage,
-    }),
-    loadUniqueVisitorCounter());
+    }));
   function L(e) {
     const t = document.getElementById("offline-banner");
     t && (t.style.display = e ? "block" : "none");
@@ -2638,9 +2653,10 @@ function initUI() {
         .catch(() => L(!0));
     }),
     navigator.onLine
-      ? checkBackendAvailability().catch(() =>
-        L(!0),
-      )
+      ? scheduleAfterStartup(() => {
+        checkBackendAvailability().catch(() => L(!0));
+        loadUniqueVisitorCounter();
+      }, 1800)
       : L(!0),
     e &&
     e.addEventListener("click", () => {
@@ -2648,7 +2664,7 @@ function initUI() {
         ? stopSessionManually()
         : isSessionRunning
           ? stopSessionManually()
-          : startNewSession();
+          : prepareAndStartNewSession();
     }),
     updateTargetPanelTitle(),
     s &&
@@ -2766,9 +2782,11 @@ function initUI() {
         }),
         "quartier" === e
           ? ((r.style.display = "block"),
+            loadQuartiers(),
             a && a.value && highlightQuartier(a.value))
           : ((r.style.display = "none"), clearQuartierOverlay()),
         setZoneLayersVisibility(e),
+        "quartiers-ville" === e && loadQuartiers(),
         "monuments" === e &&
         refreshMonumentsContentAndLayer().catch((error) => {
           console.warn("Actualisation des monuments impossible après changement de mode.", error);
@@ -2915,19 +2933,42 @@ function initUI() {
   const I = document.getElementById("summary");
   (I && ((I.classList.add("hidden"), (I.innerHTML = ""))), clearSessionShareSlot());
 }
+
+async function prepareAndStartNewSession() {
+  const zoneMode = getZoneMode();
+  if ("monuments" === zoneMode && !allMonuments.length) {
+    showMessage("Chargement des monuments...", "info");
+    await loadMonuments();
+  }
+  if ("quartiers-ville" === zoneMode && !allQuartierFeatures.length) {
+    showMessage("Chargement des quartiers...", "info");
+    await loadQuartiers();
+  }
+  startNewSession();
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
-  warmBackendConnection();
-  loadStreetInfos();
   (setMapStatus("Chargement", "loading"),
     initMap(),
     initUI(),
-    initFriendChallengeModeFromUrl(),
     startTimersLoop(),
-    loadStreets(),
-    loadQuartiers(),
-    loadMonuments(),
-    loadAllLeaderboards(),
     document.body.classList.add("app-ready"));
+
+  const streetsReadyPromise = loadStreets();
+
+  scheduleAfterStartup(() => {
+    warmBackendConnection();
+    loadStreetInfos();
+    initFriendChallengeModeFromUrl();
+  }, 250);
+
+  streetsReadyPromise.finally(() => {
+    scheduleAfterStartup(() => {
+      loadQuartiers();
+      loadMonuments();
+      loadAllLeaderboards();
+    }, 500);
+  });
 });
 const infoEl = document.getElementById("street-info");
 function startTimersLoop() {
@@ -3153,7 +3194,11 @@ function loadStreets({ force = false } = {}) {
   return streetsLoadingPromise;
 }
 function loadMonuments() {
-  return loadMonumentsRuntime({
+  if (monumentsLoadingPromise) {
+    return monumentsLoadingPromise;
+  }
+
+  monumentsLoadingPromise = loadMonumentsRuntime({
     map,
     L,
     uiTheme: UI_THEME,
@@ -3180,7 +3225,12 @@ function loadMonuments() {
     })
     .catch((e) => {
       console.error("Erreur lors du chargement des monuments :", e);
+    })
+    .finally(() => {
+      monumentsLoadingPromise = null;
     });
+
+  return monumentsLoadingPromise;
 }
 
 function refreshMonumentsContentAndLayer() {
@@ -3217,7 +3267,15 @@ function refreshLectureTooltipsIfNeeded() {
     setLectureTooltipsEnabled(!0);
 }
 function loadQuartiers() {
-  loadQuartiersRuntime({
+  if (quartiersLoadingPromise) {
+    return quartiersLoadingPromise;
+  }
+
+  if (allQuartierFeatures.length && quartiersLayer) {
+    return Promise.resolve(true);
+  }
+
+  quartiersLoadingPromise = loadQuartiersRuntime({
     map,
     L,
     uiTheme: UI_THEME,
@@ -3239,7 +3297,12 @@ function loadQuartiers() {
     })
     .catch((e) => {
       console.error("Erreur lors du chargement des quartiers :", e);
+    })
+    .finally(() => {
+      quartiersLoadingPromise = null;
     });
+
+  return quartiersLoadingPromise;
 }
 function highlightQuartier(e) {
   quartierOverlay = highlightQuartierOnMap({

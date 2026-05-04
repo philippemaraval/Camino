@@ -51,7 +51,7 @@ export async function loadStreetsRuntime({
   if (remoteApiBase) {
     candidateRequests.push({
       url: `${remoteApiBase}/api/streets-light`,
-      options: { cache: "no-store" },
+      options: {},
     });
   }
 

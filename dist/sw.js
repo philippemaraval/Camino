@@ -1,11 +1,11 @@
-const CACHE_NAME = "camino-v6";
+const CACHE_NAME = "camino-v7";
 
 const CORE_PRECACHE_URLS = [
   "/",
   "/index.html",
-  "/style.css",
-  "/main.js",
-  "/data_rules.js",
+  "/style.css.min",
+  "/main.js.min",
+  "/data_rules.js.min",
   "/site.webmanifest",
 ];
 
@@ -96,6 +96,27 @@ async function cacheFirst(request) {
   return response;
 }
 
+async function staleWhileRevalidate(request) {
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(request);
+  const networkPromise = fetch(request)
+    .then((response) => {
+      if (response && response.ok) {
+        cache.put(request, response.clone());
+      }
+      return response;
+    })
+    .catch(() => null);
+
+  if (cached) {
+    return cached;
+  }
+
+  const response = await networkPromise;
+  if (response) return response;
+  throw new Error("Network unavailable and no cached response");
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
@@ -120,8 +141,13 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (isDataRequest || isStaticAsset) {
-    event.respondWith(networkFirst(request));
+  if (isDataRequest) {
+    event.respondWith(staleWhileRevalidate(request));
+    return;
+  }
+
+  if (isStaticAsset) {
+    event.respondWith(staleWhileRevalidate(request));
     return;
   }
 

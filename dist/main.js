@@ -1921,7 +1921,7 @@
     if (remoteApiBase) {
       candidateRequests.push({
         url: `${remoteApiBase}/api/streets-light`,
-        options: { cache: "no-store" }
+        options: {}
       });
     }
     let response = null;
@@ -3980,6 +3980,18 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   var notificationConfigCache = null;
   var backendWarmupPromise = null;
   var runtimeContentLoadPromise = null;
+  function scheduleAfterStartup(callback, delayMs = 0) {
+    const run = () => {
+      if (typeof window.requestIdleCallback === "function") {
+        window.requestIdleCallback(callback, { timeout: 2500 });
+        return;
+      }
+      setTimeout(callback, 0);
+    };
+    requestAnimationFrame(() => {
+      setTimeout(run, delayMs);
+    });
+  }
   function normalizeStreetInfoMapPayload(entries) {
     if (!entries || typeof entries !== "object" || Array.isArray(entries)) {
       return null;
@@ -4665,6 +4677,8 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   var streetsLoadingPromise = null;
   var areStreetsReady = false;
   var mapInvalidateTimeoutIds = [];
+  var quartiersLoadingPromise = null;
+  var monumentsLoadingPromise = null;
   var monumentsContentSyncPromise = null;
   var monumentsSessionRefreshPending = false;
   var FRIEND_CHALLENGE_QUERY_PARAM = "defi";
@@ -4997,7 +5011,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     "lecture" !== gameMode && isLectureMode && (isLectureMode = false, setLectureTooltipsEnabled(false), refreshLectureStreetSearchForCurrentMode(), updateTargetPanelTitle(), updateLayoutSessionState());
     updateGameModeControls();
     list && (list.scrollTop = 0, list.classList.remove("visible"));
-    "lecture" === gameMode && requestAnimationFrame(() => startNewSession());
+    "lecture" === gameMode && requestAnimationFrame(() => prepareAndStartNewSession());
   }
   function setQuartierSelectionByName(quartierName) {
     const select = document.getElementById("quartier-select");
@@ -5952,7 +5966,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
           const e3 = r2.cloneNode(true), t3 = y.querySelector(".difficulty-pill");
           t3 ? t3.replaceWith(e3) : y.appendChild(e3);
         }
-        b.value = t2, isSessionRunning && endSession(), "lecture" !== t2 && isLectureMode && (isLectureMode = false, setLectureTooltipsEnabled(false), refreshLectureStreetSearchForCurrentMode(), updateTargetPanelTitle(), updateLayoutSessionState()), updateGameModeControls(), v.scrollTop = 0, v.classList.remove("visible"), "lecture" === t2 && requestAnimationFrame(() => startNewSession());
+        b.value = t2, isSessionRunning && endSession(), "lecture" !== t2 && isLectureMode && (isLectureMode = false, setLectureTooltipsEnabled(false), refreshLectureStreetSearchForCurrentMode(), updateTargetPanelTitle(), updateLayoutSessionState()), updateGameModeControls(), v.scrollTop = 0, v.classList.remove("visible"), "lecture" === t2 && requestAnimationFrame(() => prepareAndStartNewSession());
       });
     })), i && l && i.addEventListener("click", (e2) => {
       e2.stopPropagation(), l.classList.toggle("visible");
@@ -5967,7 +5981,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     })), initOnboardingBanner(), initInstallPrompt({
       isStandaloneDisplayModeFn: isStandaloneDisplayMode2,
       showMessage
-    }), loadUniqueVisitorCounter();
+    });
     function L2(e2) {
       const t2 = document.getElementById("offline-banner");
       t2 && (t2.style.display = e2 ? "block" : "none");
@@ -5975,10 +5989,11 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     initTooltipPopup(), window.addEventListener("offline", () => L2(true)), window.addEventListener("online", () => {
       warmBackendConnection();
       checkBackendAvailability().then(() => L2(false)).catch(() => L2(true));
-    }), navigator.onLine ? checkBackendAvailability().catch(
-      () => L2(true)
-    ) : L2(true), e && e.addEventListener("click", () => {
-      isDailyMode && window._dailyGameOver ? stopSessionManually() : isSessionRunning ? stopSessionManually() : startNewSession();
+    }), navigator.onLine ? scheduleAfterStartup(() => {
+      checkBackendAvailability().catch(() => L2(true));
+      loadUniqueVisitorCounter();
+    }, 1800) : L2(true), e && e.addEventListener("click", () => {
+      isDailyMode && window._dailyGameOver ? stopSessionManually() : isSessionRunning ? stopSessionManually() : prepareAndStartNewSession();
     }), updateTargetPanelTitle(), s && s.addEventListener("click", () => {
       isSessionRunning && togglePause();
     });
@@ -6068,7 +6083,7 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
           addTouchBufferForLayer(e3);
         }
         e3.setStyle({ color: t2.color, weight: t2.weight }), e3.options.interactive = r2, e3.touchBuffer && (e3.touchBuffer.options.interactive = r2 && !!e3.touchBuffer);
-      }), "quartier" === e2 ? (r.style.display = "block", a && a.value && highlightQuartier(a.value)) : (r.style.display = "none", clearQuartierOverlay()), setZoneLayersVisibility(e2), "monuments" === e2 && refreshMonumentsContentAndLayer().catch((error) => {
+      }), "quartier" === e2 ? (r.style.display = "block", loadQuartiers(), a && a.value && highlightQuartier(a.value)) : (r.style.display = "none", clearQuartierOverlay()), setZoneLayersVisibility(e2), "quartiers-ville" === e2 && loadQuartiers(), "monuments" === e2 && refreshMonumentsContentAndLayer().catch((error) => {
         console.warn("Actualisation des monuments impossible apr\xE8s changement de mode.", error);
       }), updateStreetInfoPanelVisibility(), refreshLectureTooltipsIfNeeded(), isLectureMode && refreshLectureStreetSearchForCurrentMode({ preserveQuery: true });
       const n2 = document.getElementById("street-info");
@@ -6147,10 +6162,33 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     const I = document.getElementById("summary");
     I && (I.classList.add("hidden"), I.innerHTML = ""), clearSessionShareSlot();
   }
+  async function prepareAndStartNewSession() {
+    const zoneMode = getZoneMode();
+    if ("monuments" === zoneMode && !allMonuments.length) {
+      showMessage("Chargement des monuments...", "info");
+      await loadMonuments();
+    }
+    if ("quartiers-ville" === zoneMode && !allQuartierFeatures.length) {
+      showMessage("Chargement des quartiers...", "info");
+      await loadQuartiers();
+    }
+    startNewSession();
+  }
   document.addEventListener("DOMContentLoaded", async () => {
-    warmBackendConnection();
-    loadStreetInfos();
-    setMapStatus("Chargement", "loading"), initMap(), initUI(), initFriendChallengeModeFromUrl(), startTimersLoop(), loadStreets(), loadQuartiers(), loadMonuments(), loadAllLeaderboards(), document.body.classList.add("app-ready");
+    setMapStatus("Chargement", "loading"), initMap(), initUI(), startTimersLoop(), document.body.classList.add("app-ready");
+    const streetsReadyPromise = loadStreets();
+    scheduleAfterStartup(() => {
+      warmBackendConnection();
+      loadStreetInfos();
+      initFriendChallengeModeFromUrl();
+    }, 250);
+    streetsReadyPromise.finally(() => {
+      scheduleAfterStartup(() => {
+        loadQuartiers();
+        loadMonuments();
+        loadAllLeaderboards();
+      }, 500);
+    });
   });
   var infoEl = document.getElementById("street-info");
   function startTimersLoop() {
@@ -6321,7 +6359,10 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     return streetsLoadingPromise;
   }
   function loadMonuments() {
-    return loadMonumentsRuntime({
+    if (monumentsLoadingPromise) {
+      return monumentsLoadingPromise;
+    }
+    monumentsLoadingPromise = loadMonumentsRuntime({
       map,
       L,
       uiTheme: UI_THEME,
@@ -6344,7 +6385,10 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       setZoneLayersVisibility(getZoneMode());
     }).catch((e) => {
       console.error("Erreur lors du chargement des monuments :", e);
+    }).finally(() => {
+      monumentsLoadingPromise = null;
     });
+    return monumentsLoadingPromise;
   }
   function refreshMonumentsContentAndLayer() {
     if (monumentsContentSyncPromise) {
@@ -6377,7 +6421,13 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     "lecture" !== getGameMode() && true !== isLectureMode || setLectureTooltipsEnabled(true);
   }
   function loadQuartiers() {
-    loadQuartiersRuntime({
+    if (quartiersLoadingPromise) {
+      return quartiersLoadingPromise;
+    }
+    if (allQuartierFeatures.length && quartiersLayer) {
+      return Promise.resolve(true);
+    }
+    quartiersLoadingPromise = loadQuartiersRuntime({
       map,
       L,
       uiTheme: UI_THEME,
@@ -6395,7 +6445,10 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       refreshLectureTooltipsIfNeeded();
     }).catch((e) => {
       console.error("Erreur lors du chargement des quartiers :", e);
+    }).finally(() => {
+      quartiersLoadingPromise = null;
     });
+    return quartiersLoadingPromise;
   }
   function highlightQuartier(e) {
     quartierOverlay = highlightQuartierOnMap({
