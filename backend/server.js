@@ -1212,12 +1212,16 @@ function loadMapSyncMetaFromFile() {
     }
 }
 
+function selectLatestMapSyncMeta(...candidates) {
+    return candidates
+        .filter(Boolean)
+        .sort((left, right) => Date.parse(right.lastSyncedAt) - Date.parse(left.lastSyncedAt))[0] || null;
+}
+
 async function getEffectiveMapSyncMeta() {
     const fromDb = normalizeMapSyncMeta(parseJsonSetting(await db.getAppSetting(MAP_SYNC_META_SETTING_KEY)));
-    if (fromDb) {
-        return fromDb;
-    }
-    return loadMapSyncMetaFromFile();
+    const fromFile = loadMapSyncMetaFromFile();
+    return selectLatestMapSyncMeta(fromDb, fromFile);
 }
 
 function loadDefaultStreetInfosFromFile() {
