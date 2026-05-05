@@ -1,5 +1,5 @@
 {
-  "lastSyncedAt": "2026-05-05T00:37:21.804Z",
+  "lastSyncedAt": "2026-05-05T00:41:01.381Z",
   "generatedBy": "scripts/sync_osm.js",
   "overpassEndpoints": [
     "https://overpass-api.de/api/interpreter",
@@ -7,7 +7,7 @@
     "https://overpass.kumi.systems/api/interpreter"
   ],
   "overpassSelectedEndpoint": "https://overpass-api.de/api/interpreter",
-  "overpassOsmBase": "2026-05-05T00:35:02Z",
+  "overpassOsmBase": "2026-05-05T00:39:00Z",
   "overpassStatus": [
     {
       "endpoint": "https://overpass-api.de/api/interpreter",
