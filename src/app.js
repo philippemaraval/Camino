@@ -1007,6 +1007,8 @@ let monumentsContentSyncPromise = null;
 let monumentsSessionRefreshPending = !1;
 
 const FRIEND_CHALLENGE_QUERY_PARAM = "defi";
+const PENDING_FRIEND_CHALLENGE_STORAGE_KEY = "camino_pending_friend_challenge";
+const PENDING_FRIEND_CHALLENGE_MAX_AGE_MS = 48 * 60 * 60 * 1000;
 const FRIEND_CHALLENGE_ALLOWED_GAME_MODES = new Set(["classique", "marathon", "chrono"]);
 const FRIEND_CHALLENGE_ALLOWED_ZONE_MODES = new Set([
   "ville",
@@ -1288,6 +1290,62 @@ function getFriendChallengeCodeFromUrl() {
   }
 }
 
+function normalizeFriendChallengeCode(value) {
+  const code = String(value || "").trim().toUpperCase();
+  return /^[A-Z0-9]{10}$/.test(code) ? code : "";
+}
+
+function rememberPendingFriendChallengeCode(code) {
+  const normalizedCode = normalizeFriendChallengeCode(code);
+  if (!normalizedCode) {
+    return;
+  }
+  try {
+    localStorage.setItem(
+      PENDING_FRIEND_CHALLENGE_STORAGE_KEY,
+      JSON.stringify({
+        code: normalizedCode,
+        savedAt: Date.now(),
+      }),
+    );
+  } catch (error) {
+    console.warn("Pending friend challenge save failed:", error);
+  }
+}
+
+function clearPendingFriendChallengeCode(code = "") {
+  try {
+    if (!code) {
+      localStorage.removeItem(PENDING_FRIEND_CHALLENGE_STORAGE_KEY);
+      return;
+    }
+    const pending = getPendingFriendChallengeCode();
+    if (pending && pending === normalizeFriendChallengeCode(code)) {
+      localStorage.removeItem(PENDING_FRIEND_CHALLENGE_STORAGE_KEY);
+    }
+  } catch (error) {
+    console.warn("Pending friend challenge clear failed:", error);
+  }
+}
+
+function getPendingFriendChallengeCode() {
+  let payload = null;
+  try {
+    payload = JSON.parse(localStorage.getItem(PENDING_FRIEND_CHALLENGE_STORAGE_KEY) || "null");
+  } catch (error) {
+    clearPendingFriendChallengeCode();
+    return "";
+  }
+
+  const code = normalizeFriendChallengeCode(payload?.code);
+  const savedAt = Number(payload?.savedAt);
+  if (!code || !Number.isFinite(savedAt) || Date.now() - savedAt > PENDING_FRIEND_CHALLENGE_MAX_AGE_MS) {
+    clearPendingFriendChallengeCode();
+    return "";
+  }
+  return code;
+}
+
 function updateFriendChallengeCodeInUrl(code) {
   try {
     const url = new URL(window.location.href);
@@ -1528,6 +1586,57 @@ function clearFriendChallengeMiniBoard() {
   if (!slot) return;
   slot.innerHTML = "";
   slot.classList.add("hidden");
+}
+
+function renderPendingFriendChallengePrompt(code) {
+  const normalizedCode = normalizeFriendChallengeCode(code);
+  const slot = document.getElementById("friend-challenge-board-slot");
+  if (!slot || !normalizedCode || activeFriendChallenge) return;
+
+  slot.innerHTML = "";
+  slot.classList.remove("hidden");
+
+  const title = document.createElement("p");
+  title.className = "friend-challenge-board-title";
+  title.textContent = "Défi amis reçu";
+  slot.appendChild(title);
+
+  const meta = document.createElement("p");
+  meta.className = "friend-challenge-board-meta";
+  meta.textContent = `Code ${normalizedCode}`;
+  slot.appendChild(meta);
+
+  const actions = document.createElement("div");
+  actions.className = "friend-challenge-board-actions";
+
+  const ignoreBtn = document.createElement("button");
+  ignoreBtn.type = "button";
+  ignoreBtn.className = "btn-secondary friend-challenge-copy-btn";
+  ignoreBtn.textContent = "Ignorer";
+  ignoreBtn.addEventListener("click", () => {
+    clearPendingFriendChallengeCode(normalizedCode);
+    clearFriendChallengeMiniBoard();
+    showMessage("Défi amis ignoré.", "info");
+  });
+  actions.appendChild(ignoreBtn);
+
+  const resumeBtn = document.createElement("button");
+  resumeBtn.type = "button";
+  resumeBtn.className = "btn-primary friend-challenge-copy-btn";
+  resumeBtn.textContent = "Reprendre";
+  resumeBtn.addEventListener("click", async () => {
+    resumeBtn.disabled = !0;
+    ignoreBtn.disabled = !0;
+    const challenge = await fetchAndActivateFriendChallengeByCode(normalizedCode, { showSuccessMessage: !0 });
+    if (challenge) {
+      clearPendingFriendChallengeCode(normalizedCode);
+    } else {
+      resumeBtn.disabled = !1;
+      ignoreBtn.disabled = !1;
+    }
+  });
+  actions.appendChild(resumeBtn);
+  slot.appendChild(actions);
 }
 
 function renderFriendChallengeMiniBoard({ rows = [], infoMessage = "" } = {}) {
@@ -1850,7 +1959,11 @@ async function initFriendChallengeModeFromUrl() {
   const challengeCode = getFriendChallengeCodeFromUrl();
   if (!challengeCode) {
     deactivateFriendChallenge({ clearUrl: !1, silent: !0 });
+    renderPendingFriendChallengePrompt(getPendingFriendChallengeCode());
     return null;
+  }
+  if (!isStandaloneDisplayMode()) {
+    rememberPendingFriendChallengeCode(challengeCode);
   }
   friendChallengeInitPromise = fetchAndActivateFriendChallengeByCode(challengeCode, { showSuccessMessage: !0 })
     .then((challenge) => {

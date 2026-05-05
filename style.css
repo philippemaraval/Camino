@@ -1911,6 +1911,7 @@ button {
 
 .friend-challenge-board-actions {
   display: flex;
+  gap: 6px;
   justify-content: flex-end;
   margin-top: 6px;
 }

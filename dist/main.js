@@ -4721,6 +4721,8 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   var monumentsContentSyncPromise = null;
   var monumentsSessionRefreshPending = false;
   var FRIEND_CHALLENGE_QUERY_PARAM = "defi";
+  var PENDING_FRIEND_CHALLENGE_STORAGE_KEY = "camino_pending_friend_challenge";
+  var PENDING_FRIEND_CHALLENGE_MAX_AGE_MS = 48 * 60 * 60 * 1e3;
   var FRIEND_CHALLENGE_ALLOWED_GAME_MODES = /* @__PURE__ */ new Set(["classique", "marathon", "chrono"]);
   var FRIEND_CHALLENGE_ALLOWED_ZONE_MODES = /* @__PURE__ */ new Set([
     "ville",
@@ -4930,6 +4932,57 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     } catch (error) {
       return "";
     }
+  }
+  function normalizeFriendChallengeCode(value) {
+    const code = String(value || "").trim().toUpperCase();
+    return /^[A-Z0-9]{10}$/.test(code) ? code : "";
+  }
+  function rememberPendingFriendChallengeCode(code) {
+    const normalizedCode = normalizeFriendChallengeCode(code);
+    if (!normalizedCode) {
+      return;
+    }
+    try {
+      localStorage.setItem(
+        PENDING_FRIEND_CHALLENGE_STORAGE_KEY,
+        JSON.stringify({
+          code: normalizedCode,
+          savedAt: Date.now()
+        })
+      );
+    } catch (error) {
+      console.warn("Pending friend challenge save failed:", error);
+    }
+  }
+  function clearPendingFriendChallengeCode(code = "") {
+    try {
+      if (!code) {
+        localStorage.removeItem(PENDING_FRIEND_CHALLENGE_STORAGE_KEY);
+        return;
+      }
+      const pending = getPendingFriendChallengeCode();
+      if (pending && pending === normalizeFriendChallengeCode(code)) {
+        localStorage.removeItem(PENDING_FRIEND_CHALLENGE_STORAGE_KEY);
+      }
+    } catch (error) {
+      console.warn("Pending friend challenge clear failed:", error);
+    }
+  }
+  function getPendingFriendChallengeCode() {
+    let payload = null;
+    try {
+      payload = JSON.parse(localStorage.getItem(PENDING_FRIEND_CHALLENGE_STORAGE_KEY) || "null");
+    } catch (error) {
+      clearPendingFriendChallengeCode();
+      return "";
+    }
+    const code = normalizeFriendChallengeCode(payload == null ? void 0 : payload.code);
+    const savedAt = Number(payload == null ? void 0 : payload.savedAt);
+    if (!code || !Number.isFinite(savedAt) || Date.now() - savedAt > PENDING_FRIEND_CHALLENGE_MAX_AGE_MS) {
+      clearPendingFriendChallengeCode();
+      return "";
+    }
+    return code;
   }
   function updateFriendChallengeCodeInUrl(code) {
     try {
@@ -5143,6 +5196,50 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     if (!slot) return;
     slot.innerHTML = "";
     slot.classList.add("hidden");
+  }
+  function renderPendingFriendChallengePrompt(code) {
+    const normalizedCode = normalizeFriendChallengeCode(code);
+    const slot = document.getElementById("friend-challenge-board-slot");
+    if (!slot || !normalizedCode || activeFriendChallenge) return;
+    slot.innerHTML = "";
+    slot.classList.remove("hidden");
+    const title = document.createElement("p");
+    title.className = "friend-challenge-board-title";
+    title.textContent = "D\xE9fi amis re\xE7u";
+    slot.appendChild(title);
+    const meta = document.createElement("p");
+    meta.className = "friend-challenge-board-meta";
+    meta.textContent = `Code ${normalizedCode}`;
+    slot.appendChild(meta);
+    const actions = document.createElement("div");
+    actions.className = "friend-challenge-board-actions";
+    const ignoreBtn = document.createElement("button");
+    ignoreBtn.type = "button";
+    ignoreBtn.className = "btn-secondary friend-challenge-copy-btn";
+    ignoreBtn.textContent = "Ignorer";
+    ignoreBtn.addEventListener("click", () => {
+      clearPendingFriendChallengeCode(normalizedCode);
+      clearFriendChallengeMiniBoard();
+      showMessage("D\xE9fi amis ignor\xE9.", "info");
+    });
+    actions.appendChild(ignoreBtn);
+    const resumeBtn = document.createElement("button");
+    resumeBtn.type = "button";
+    resumeBtn.className = "btn-primary friend-challenge-copy-btn";
+    resumeBtn.textContent = "Reprendre";
+    resumeBtn.addEventListener("click", async () => {
+      resumeBtn.disabled = true;
+      ignoreBtn.disabled = true;
+      const challenge = await fetchAndActivateFriendChallengeByCode(normalizedCode, { showSuccessMessage: true });
+      if (challenge) {
+        clearPendingFriendChallengeCode(normalizedCode);
+      } else {
+        resumeBtn.disabled = false;
+        ignoreBtn.disabled = false;
+      }
+    });
+    actions.appendChild(resumeBtn);
+    slot.appendChild(actions);
   }
   function renderFriendChallengeMiniBoard({ rows = [], infoMessage = "" } = {}) {
     const slot = document.getElementById("friend-challenge-board-slot");
@@ -5438,7 +5535,11 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
     const challengeCode = getFriendChallengeCodeFromUrl();
     if (!challengeCode) {
       deactivateFriendChallenge({ clearUrl: false, silent: true });
+      renderPendingFriendChallengePrompt(getPendingFriendChallengeCode());
       return null;
+    }
+    if (!isStandaloneDisplayMode2()) {
+      rememberPendingFriendChallengeCode(challengeCode);
     }
     friendChallengeInitPromise = fetchAndActivateFriendChallengeByCode(challengeCode, { showSuccessMessage: true }).then((challenge) => {
       if (!challenge) {
