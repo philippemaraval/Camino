@@ -52,7 +52,7 @@ const OVERPASS_QUERY = `
 [out:json][timeout:300];
 area["ref:INSEE"="13055"]->.marseille;
 (
-  nwr["highway"]["highway"!="cycleway"]["name"](area.marseille);
+  nwr["highway"]["highway"!="cycleway"]["highway"!="path"]["highway"!="track"]["name"](area.marseille);
   nwr["place"="square"]["name"](area.marseille);
   nwr["area"="yes"]["name"](area.marseille);
 );
@@ -67,7 +67,7 @@ const OVERPASS_URLS = Array.from(new Set([
     'https://lz4.overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter'
 ].filter(Boolean)));
-const EXCLUDED_HIGHWAY_TYPES = new Set(['cycleway']);
+const EXCLUDED_HIGHWAY_TYPES = new Set(['cycleway', 'path', 'track']);
 
 // ── Utilitaires ──
 

@@ -44,7 +44,7 @@ export async function loadStreetsRuntime({
   const remoteApiBase = String(apiUrl || "").trim().replace(/\/+$/, "");
   const candidateRequests = [
     {
-      url: "data/marseille_rues_light.geojson?v=12",
+      url: "data/marseille_rues_light.geojson?v=13",
       options: {},
     },
   ];

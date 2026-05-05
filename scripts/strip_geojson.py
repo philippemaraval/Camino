@@ -22,6 +22,7 @@ BACKEND_OUTPUT = os.path.join(PROJECT_DIR, "backend", "data", "marseille_rues_li
 
 # Only keep properties that the game actually uses
 KEEP_PROPERTIES = {"name", "quartier", "highway"}
+EXCLUDED_HIGHWAY_TYPES = {"path", "track"}
 
 # Round coordinates to 5 decimal places (~1.1 m precision)
 COORD_PRECISION = 5
@@ -50,6 +51,9 @@ def strip_feature(feature):
 
     # Skip features without a name
     if "name" not in stripped_props or not stripped_props["name"]:
+        return None
+
+    if stripped_props.get("highway", "").strip().lower() in EXCLUDED_HIGHWAY_TYPES:
         return None
 
     geometry = feature.get("geometry", {})

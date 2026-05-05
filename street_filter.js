@@ -121,6 +121,7 @@ function normalizeStreetNameForFilter(streetName) {
 }
 
 const WHITELIST = new Set(RAW_WHITELIST.map((entry) => normalizeStreetNameForFilter(entry)));
+const EXCLUDED_HIGHWAY_TYPES = new Set(["platform", "path", "track"]);
 
 function shouldKeepStreetForGame({ name, highway } = {}) {
   const normalizedName = normalizeStreetNameForFilter(name);
@@ -131,7 +132,7 @@ function shouldKeepStreetForGame({ name, highway } = {}) {
   const normalizedHighway = String(highway || "")
     .trim()
     .toLowerCase();
-  if (normalizedHighway === "platform") {
+  if (EXCLUDED_HIGHWAY_TYPES.has(normalizedHighway)) {
     return false;
   }
 
