@@ -7,7 +7,7 @@
  *
  * Génère :
  *   - data/marseille_rues_enrichi.geojson  (complet, pour le backend)
- *   - data/marseille_rues_light.geojson    (léger, pour le frontend)
+ *   - data/marseille_rues_light.geojson    (léger filtré, pour le frontend)
  *   - backend/data/marseille_rues_light.geojson (copie pour Render)
  *   - backend/data/streets_index.json      (index pour le Daily Challenge)
  */
@@ -506,9 +506,6 @@ async function main() {
         features: features.map(f => f.full)
     };
 
-    const lightFeatures = features.map((entry) => entry.light);
-    console.log(`   Jeu carte complet : ${lightFeatures.length} segments conservés.`);
-
     const filteredEntries = features.filter((entry) =>
         shouldKeepStreetForGame({
             name: entry?.name,
@@ -516,8 +513,11 @@ async function main() {
         })
     );
     console.log(
-        `   Filtre gameplay (index Daily) : ${filteredEntries.length} segments gardés, ${features.length - filteredEntries.length} exclus.`
+        `   Filtre gameplay/carte : ${filteredEntries.length} segments gardés, ${features.length - filteredEntries.length} exclus.`
     );
+
+    const lightFeatures = filteredEntries.map((entry) => entry.light);
+    console.log(`   Jeu carte filtré : ${lightFeatures.length} segments conservés.`);
 
     const lightCollection = {
         type: 'FeatureCollection',
@@ -575,6 +575,7 @@ async function main() {
             statusError: probe.error
         })),
         overpassElements: totalElements,
+        rawMapSegments: features.length,
         keptMapSegments: lightFeatures.length,
         keptSegments: filteredEntries.length,
         uniqueStreets: uniqueIndex.length
