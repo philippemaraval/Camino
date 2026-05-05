@@ -5,7 +5,8 @@ const API_BASE_CANDIDATES =
     ? ["http://localhost:3000"]
     : ["https://camino2.onrender.com"];
 
-const API_REQUEST_TIMEOUT_MS = 20000;
+const API_REQUEST_TIMEOUT_MS = 45000;
+const LOGIN_API_REQUEST_TIMEOUT_MS = 75000;
 const OSM_SYNC_POLL_INTERVAL_MS = 8000;
 const OSM_SYNC_POLL_TIMEOUT_MS = 12 * 60 * 1000;
 
@@ -28,6 +29,7 @@ const refs = {
   loginForm: document.getElementById("login-form"),
   loginUsername: document.getElementById("login-username"),
   loginPassword: document.getElementById("login-password"),
+  loginBtn: document.getElementById("login-btn"),
   sessionUser: document.getElementById("session-user"),
   sessionRole: document.getElementById("session-role"),
   refreshContentBtn: document.getElementById("refresh-content-btn"),
@@ -256,7 +258,7 @@ function restoreSession() {
   }
 }
 
-async function apiRequest(path, { method = "GET", body, auth = true } = {}) {
+async function apiRequest(path, { method = "GET", body, auth = true, timeoutMs = API_REQUEST_TIMEOUT_MS } = {}) {
   const headers = {};
   if (auth) {
     headers.Authorization = `Bearer ${state.token}`;
@@ -274,7 +276,7 @@ async function apiRequest(path, { method = "GET", body, auth = true } = {}) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
       controller.abort();
-    }, API_REQUEST_TIMEOUT_MS);
+    }, timeoutMs);
     try {
       const candidateResponse = await fetch(`${base}${path}`, {
         method,
@@ -320,7 +322,7 @@ async function apiRequest(path, { method = "GET", body, auth = true } = {}) {
         continue;
       }
       if (error?.name === "AbortError") {
-        throw new Error(`API timeout apres ${Math.round(API_REQUEST_TIMEOUT_MS / 1000)}s`);
+        throw new Error(`API timeout apres ${Math.round(timeoutMs / 1000)}s (${path})`);
       }
       throw error;
     }
@@ -341,6 +343,13 @@ async function apiRequest(path, { method = "GET", body, auth = true } = {}) {
     throw new Error("API response is not valid JSON");
   }
   return responsePayload;
+}
+
+async function warmApiForLogin() {
+  await apiRequest("/api/health", {
+    auth: false,
+    timeoutMs: LOGIN_API_REQUEST_TIMEOUT_MS,
+  });
 }
 
 function parseListTextarea(value) {
@@ -740,11 +749,15 @@ async function onLoginSubmit(event) {
   }
 
   try {
+    refs.loginBtn.disabled = true;
+    setGlobalStatus("Reveil de l'API...", "info");
+    await warmApiForLogin();
     setGlobalStatus("Connexion en cours...", "info");
     const payload = await apiRequest("/api/login", {
       method: "POST",
       auth: false,
       body: { username, password },
+      timeoutMs: LOGIN_API_REQUEST_TIMEOUT_MS,
     });
 
     state.token = String(payload?.token || "");
@@ -759,6 +772,8 @@ async function onLoginSubmit(event) {
     clearSession();
     setUiAuthenticated(false);
     setGlobalStatus(`Connexion impossible: ${error.message}`, "error");
+  } finally {
+    refs.loginBtn.disabled = false;
   }
 }
 
