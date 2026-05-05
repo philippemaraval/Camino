@@ -379,13 +379,14 @@
         dailyContent.className = "leaderboard-zone-content";
         const table = document.createElement("table");
         table.className = "leaderboard-table";
-        table.innerHTML = "<thead><tr><th>#</th><th>Joueur</th><th>Essais</th></tr></thead>";
+        table.innerHTML = "<thead><tr><th>#</th><th>Joueur</th><th>R\xE9sultat</th></tr></thead>";
         const tbody = document.createElement("tbody");
         dailyRows.forEach((row, index) => {
           const tr = document.createElement("tr");
           const rank = (index === 0 ? "\u{1F947} " : index === 1 ? "\u{1F948} " : index === 2 ? "\u{1F949} " : "") || `${index + 1}`;
           const playerAvatar = row.avatar || "\u{1F464}";
-          tr.innerHTML = `<td>${rank}</td><td><span class="leaderboard-avatar">${playerAvatar}</span>${row.username || "Anonyme"}</td><td>${row.attempts_count}/7</td>`;
+          const resultText = row.success ? `${row.attempts_count}/7` : `\u274C ${Math.round(row.best_distance_meters || 0)}m`;
+          tr.innerHTML = `<td>${rank}</td><td><span class="leaderboard-avatar">${playerAvatar}</span>${row.username || "Anonyme"}</td><td>${resultText}</td>`;
           tbody.appendChild(tr);
         });
         table.appendChild(tbody);
@@ -4944,17 +4945,29 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
       console.warn("Friend challenge URL sync failed:", error);
     }
   }
+  function getFriendChallengeShareOrigin() {
+    const fallbackOrigin = "https://camino-ajm.pages.dev";
+    try {
+      const { origin, hostname, protocol } = window.location;
+      if (protocol !== "file:" && hostname && hostname !== "localhost" && hostname !== "127.0.0.1") {
+        return origin;
+      }
+    } catch (error) {
+    }
+    return fallbackOrigin;
+  }
   function buildFriendChallengeShareUrl(challenge) {
     if (!challenge) {
       return "";
     }
+    const shareOrigin = getFriendChallengeShareOrigin();
     if (challenge.sharePath) {
       try {
-        return new URL(challenge.sharePath, window.location.origin).toString();
+        return new URL(challenge.sharePath, shareOrigin).toString();
       } catch (error) {
       }
     }
-    const url = new URL(window.location.href);
+    const url = new URL("/", shareOrigin);
     url.searchParams.set(FRIEND_CHALLENGE_QUERY_PARAM, challenge.code);
     return url.toString();
   }

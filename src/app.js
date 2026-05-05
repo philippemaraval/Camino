@@ -1303,18 +1303,37 @@ function updateFriendChallengeCodeInUrl(code) {
   }
 }
 
+function getFriendChallengeShareOrigin() {
+  const fallbackOrigin = "https://camino-ajm.pages.dev";
+  try {
+    const { origin, hostname, protocol } = window.location;
+    if (
+      protocol !== "file:" &&
+      hostname &&
+      hostname !== "localhost" &&
+      hostname !== "127.0.0.1"
+    ) {
+      return origin;
+    }
+  } catch (error) {
+    // Fallback below.
+  }
+  return fallbackOrigin;
+}
+
 function buildFriendChallengeShareUrl(challenge) {
   if (!challenge) {
     return "";
   }
+  const shareOrigin = getFriendChallengeShareOrigin();
   if (challenge.sharePath) {
     try {
-      return new URL(challenge.sharePath, window.location.origin).toString();
+      return new URL(challenge.sharePath, shareOrigin).toString();
     } catch (error) {
       // Fallback below.
     }
   }
-  const url = new URL(window.location.href);
+  const url = new URL("/", shareOrigin);
   url.searchParams.set(FRIEND_CHALLENGE_QUERY_PARAM, challenge.code);
   return url.toString();
 }
