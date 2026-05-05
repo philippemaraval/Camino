@@ -70,6 +70,17 @@ jobs:
           git commit -m "sync: update street data from OSM"
           git push origin "HEAD:${GITHUB_REF_NAME}"
 
+      - name: Trigger Render deploy
+        if: steps.check.outputs.changed == 'true' && github.event_name == 'workflow_dispatch'
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::warning::RENDER_DEPLOY_HOOK_URL is not configured; Render deploy was not triggered."
+            exit 0
+          fi
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
+
       - name: Create Pull Request
         if: steps.check.outputs.changed == 'true' && github.event_name != 'workflow_dispatch'
         uses: peter-evans/create-pull-request@v6
