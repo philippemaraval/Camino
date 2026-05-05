@@ -1043,6 +1043,73 @@ async function dispatchOsmSyncWorkflow({ requestedBy = 'admin' } = {}) {
     };
 }
 
+function normalizeGithubWorkflowRun(run) {
+    if (!run || typeof run !== 'object') {
+        return null;
+    }
+    return {
+        id: run.id,
+        number: run.run_number,
+        name: run.name,
+        event: run.event,
+        status: run.status,
+        conclusion: run.conclusion,
+        branch: run.head_branch,
+        headSha: run.head_sha,
+        createdAt: run.created_at,
+        startedAt: run.run_started_at,
+        updatedAt: run.updated_at,
+        url: run.html_url,
+    };
+}
+
+function parseOptionalIsoDate(value) {
+    const raw = String(value || '').trim();
+    if (!raw) {
+        return null;
+    }
+    const parsedMs = Date.parse(raw);
+    if (Number.isNaN(parsedMs)) {
+        return null;
+    }
+    return new Date(parsedMs);
+}
+
+async function getLatestOsmSyncWorkflowRun({ since = null } = {}) {
+    if (!GITHUB_OSM_SYNC_TOKEN) {
+        return null;
+    }
+
+    const repository = GITHUB_OSM_SYNC_REPOSITORY.trim();
+    if (!/^[^/\s]+\/[^/\s]+$/.test(repository)) {
+        throw new Error(`Depot GitHub invalide pour la sync OSM: ${repository || '(vide)'}`);
+    }
+
+    const encodedWorkflowId = encodeURIComponent(GITHUB_OSM_SYNC_WORKFLOW_ID);
+    const query = new URLSearchParams({
+        branch: GITHUB_OSM_SYNC_REF,
+        event: 'workflow_dispatch',
+        per_page: '10',
+    });
+    const { payload } = await githubJsonRequest({
+        method: 'GET',
+        apiPath: `/repos/${repository}/actions/workflows/${encodedWorkflowId}/runs?${query.toString()}`,
+        token: GITHUB_OSM_SYNC_TOKEN,
+    });
+
+    const sinceDate = parseOptionalIsoDate(since);
+    const runs = Array.isArray(payload?.workflow_runs) ? payload.workflow_runs : [];
+    const matchingRun = runs.find((run) => {
+        if (!sinceDate) {
+            return true;
+        }
+        const createdAtMs = Date.parse(run?.created_at || '');
+        return !Number.isNaN(createdAtMs) && createdAtMs >= sinceDate.getTime() - 30_000;
+    });
+
+    return normalizeGithubWorkflowRun(matchingRun);
+}
+
 function parseMonumentCoordinates(rawEntry) {
     if (!rawEntry || typeof rawEntry !== 'object' || Array.isArray(rawEntry)) {
         return null;
@@ -1809,9 +1876,23 @@ app.get('/api/editor/content', authenticateToken, requireContentEditor, asyncHan
 
 app.get('/api/editor/osm-sync/status', authenticateToken, requireContentEditor, asyncHandler(async (req, res) => {
     const active = getActiveLocalOsmSyncState();
+    let githubRun = null;
+    let githubError = null;
+    try {
+        githubRun = await getLatestOsmSyncWorkflowRun({
+            since: req.query?.since,
+        });
+    } catch (error) {
+        githubError = error.message;
+    }
+
     return res.json({
         inProgress: Boolean(active),
         active,
+        github: {
+            run: githubRun,
+            error: githubError,
+        },
     });
 }));
 

@@ -6,6 +6,8 @@ const API_BASE_CANDIDATES =
     : ["https://camino2.onrender.com"];
 
 const API_REQUEST_TIMEOUT_MS = 20000;
+const OSM_SYNC_POLL_INTERVAL_MS = 8000;
+const OSM_SYNC_POLL_TIMEOUT_MS = 12 * 60 * 1000;
 
 const STORAGE_KEY = "camino_editor_user";
 
@@ -15,6 +17,8 @@ const state = {
   role: "",
   content: null,
   selectedStreetName: "",
+  osmSyncPollTimer: 0,
+  osmSyncPollStartedAtMs: 0,
 };
 
 const refs = {
@@ -100,6 +104,117 @@ function formatOsmSyncActiveState(active) {
     : null;
   const ageLabel = ageSeconds !== null ? `, depuis ${ageSeconds}s` : "";
   return `Sync locale active: ${active.requestedBy || "admin"}, demarree ${startedLabel}${ageLabel}.`;
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+  return date.toLocaleString("fr-FR", {
+    dateStyle: "short",
+    timeStyle: "medium",
+  });
+}
+
+function formatGithubRunStatus(run) {
+  if (!run) {
+    return "Workflow GitHub en attente d'apparition...";
+  }
+
+  const statusLabels = {
+    queued: "en file d'attente",
+    in_progress: "en cours",
+    completed: "termine",
+  };
+  const conclusionLabels = {
+    success: "succes",
+    failure: "echec",
+    cancelled: "annule",
+    skipped: "ignore",
+    timed_out: "timeout",
+    action_required: "action requise",
+  };
+  const status = statusLabels[run.status] || run.status || "statut inconnu";
+  const conclusion = run.conclusion
+    ? ` (${conclusionLabels[run.conclusion] || run.conclusion})`
+    : "";
+  const started = formatDateTime(run.startedAt || run.createdAt);
+  const updated = formatDateTime(run.updatedAt);
+  const lines = [
+    `Workflow GitHub #${run.number || run.id || "?"}: ${status}${conclusion}`,
+  ];
+  if (started) {
+    lines.push(`Demarre: ${started}`);
+  }
+  if (updated) {
+    lines.push(`Derniere mise a jour: ${updated}`);
+  }
+  if (run.url) {
+    lines.push(`Voir le run: ${run.url}`);
+  }
+  return lines.join("\n");
+}
+
+function stopOsmSyncPolling() {
+  if (state.osmSyncPollTimer) {
+    window.clearTimeout(state.osmSyncPollTimer);
+    state.osmSyncPollTimer = 0;
+  }
+}
+
+async function pollOsmSyncStatus({ since, label }) {
+  stopOsmSyncPolling();
+  state.osmSyncPollStartedAtMs = Date.now();
+
+  const pollOnce = async () => {
+    try {
+      const query = since ? `?since=${encodeURIComponent(since)}` : "";
+      const payload = await apiRequest(`/api/editor/osm-sync/status${query}`);
+      const run = payload?.github?.run || null;
+      const githubError = payload?.github?.error || "";
+      const activeState = formatOsmSyncActiveState(payload?.active);
+      const runStatus = formatGithubRunStatus(run);
+      const parts = [
+        label || "Workflow GitHub lance.",
+        runStatus,
+      ];
+      if (activeState) {
+        parts.push(activeState);
+      }
+      if (githubError) {
+        parts.push(`Statut GitHub indisponible: ${githubError}`);
+      }
+      setOsmSyncOutput(parts.filter(Boolean).join("\n\n"));
+
+      if (run?.status === "completed") {
+        stopOsmSyncPolling();
+        refs.runOsmSyncBtn.disabled = false;
+        if (run.conclusion === "success") {
+          setGlobalStatus("Synchronisation OSM terminee avec succes. Deploiement Render declenche si des donnees ont change.", "success");
+        } else {
+          setGlobalStatus(`Echec synchronisation OSM: ${run.conclusion || "statut inconnu"}.`, "error");
+        }
+        return;
+      }
+    } catch (error) {
+      setOsmSyncOutput(`Suivi de synchronisation indisponible: ${error.message}`);
+    }
+
+    if (Date.now() - state.osmSyncPollStartedAtMs > OSM_SYNC_POLL_TIMEOUT_MS) {
+      stopOsmSyncPolling();
+      refs.runOsmSyncBtn.disabled = false;
+      setGlobalStatus("Suivi OSM arrete: timeout cote admin. Verifiez GitHub Actions.", "error");
+      return;
+    }
+
+    state.osmSyncPollTimer = window.setTimeout(pollOnce, OSM_SYNC_POLL_INTERVAL_MS);
+  };
+
+  await pollOnce();
 }
 
 function setUiAuthenticated(isAuthenticated) {
@@ -902,6 +1017,8 @@ async function onRunOsmSync() {
   refs.runOsmSyncBtn.disabled = true;
   setGlobalStatus("Declenchement de la synchronisation OSM...", "info");
   setOsmSyncOutput("Declenchement du workflow GitHub...");
+  stopOsmSyncPolling();
+  const pollSince = new Date(Date.now() - 15_000).toISOString();
 
   try {
     const payload = await apiRequest("/api/editor/osm-sync", {
@@ -912,8 +1029,12 @@ async function onRunOsmSync() {
     if (payload?.dispatched) {
       const dispatch = payload.dispatch || {};
       const label = `${dispatch.repository || "depot GitHub"} / ${dispatch.workflow || "sync-osm.yml"}`;
-      setGlobalStatus(`Workflow OSM lance (${label}).`, "success");
-      setOsmSyncOutput(payload?.output || "Workflow GitHub lance.");
+      setGlobalStatus(`Workflow OSM lance (${label}). Suivi en cours...`, "info");
+      setOsmSyncOutput(`${payload?.output || "Workflow GitHub lance."}\n\nRecherche du run GitHub...`);
+      await pollOsmSyncStatus({
+        since: pollSince,
+        label: payload?.output || `Workflow GitHub lance (${label}).`,
+      });
       return;
     }
 
@@ -928,12 +1049,16 @@ async function onRunOsmSync() {
     setGlobalStatus(`Sync OSM terminee en ${durationSeconds}s. ${changedLabel}`, "success");
     setOsmSyncOutput(payload?.output || "Synchronisation terminee.");
   } catch (error) {
+    stopOsmSyncPolling();
     const output = error?.payload?.output || "";
     setGlobalStatus(`Echec synchronisation OSM: ${error.message}`, "error");
     const activeState = formatOsmSyncActiveState(error?.payload?.active);
     setOsmSyncOutput(output || activeState || `Erreur: ${error.message}`);
-  } finally {
     refs.runOsmSyncBtn.disabled = false;
+  } finally {
+    if (!state.osmSyncPollTimer) {
+      refs.runOsmSyncBtn.disabled = false;
+    }
   }
 }
 
