@@ -25,6 +25,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.OSM_SYNC_PR_TOKEN || github.token }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -54,8 +56,22 @@ jobs:
             echo "diff_summary=$ADDED" >> $GITHUB_OUTPUT
           fi
 
+      - name: Commit admin sync to main
+        if: steps.check.outputs.changed == 'true' && github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            data/marseille_rues_light.geojson \
+            data/marseille_rues_enrichi.geojson \
+            data/map_sync_meta.json \
+            backend/data/marseille_rues_light.geojson \
+            backend/data/streets_index.json
+          git commit -m "sync: update street data from OSM"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
       - name: Create Pull Request
-        if: steps.check.outputs.changed == 'true'
+        if: steps.check.outputs.changed == 'true' && github.event_name != 'workflow_dispatch'
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.OSM_SYNC_PR_TOKEN || github.token }}
