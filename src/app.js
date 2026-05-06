@@ -3110,6 +3110,18 @@ function initUI() {
 
 async function prepareAndStartNewSession() {
   const zoneMode = getZoneMode();
+  if (
+    zoneMode !== "monuments" &&
+    zoneMode !== "quartiers-ville" &&
+    !areStreetsReady
+  ) {
+    showMessage("Chargement des rues...", "info");
+    const loaded = await loadStreets({ force: true });
+    if (!loaded) {
+      showMessage("Impossible de lancer la session: rues indisponibles.", "error");
+      return;
+    }
+  }
   if ("monuments" === zoneMode && !allMonuments.length) {
     showMessage("Chargement des monuments...", "info");
     await loadMonuments();
@@ -3128,21 +3140,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     startTimersLoop(),
     document.body.classList.add("app-ready"));
 
-  const streetsReadyPromise = loadStreets();
-
   scheduleAfterStartup(() => {
     warmBackendConnection();
     loadStreetInfos();
     initFriendChallengeModeFromUrl();
-  }, 250);
+  }, 150);
 
-  streetsReadyPromise.finally(() => {
-    scheduleAfterStartup(() => {
-      loadQuartiers();
-      loadMonuments();
-      loadAllLeaderboards();
-    }, 500);
-  });
+  scheduleAfterStartup(() => {
+    loadStreets();
+  }, 650);
+
+  scheduleAfterStartup(() => {
+    loadQuartiers();
+    loadMonuments();
+    loadAllLeaderboards();
+  }, 1200);
 });
 const infoEl = document.getElementById("street-info");
 function startTimersLoop() {

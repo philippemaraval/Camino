@@ -1877,6 +1877,9 @@
     if (!isTouchDevice || !map2) {
       return;
     }
+    if (layer.touchBuffer) {
+      return;
+    }
     const latLngs = layer.getLatLngs();
     if (!latLngs || latLngs.length === 0) {
       return;
@@ -1897,6 +1900,31 @@
     hitArea.on("mouseout", () => layer.fire("mouseout"));
     hitArea.addTo(map2);
     layer.touchBuffer = hitArea;
+  }
+  function scheduleIdleTask(callback) {
+    if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(callback, { timeout: 1e3 });
+      return;
+    }
+    setTimeout(() => callback({ timeRemaining: () => 8 }), 16);
+  }
+  function addTouchBuffersInBatches(layers, addTouchBufferForLayer2) {
+    if (!layers.length || typeof addTouchBufferForLayer2 !== "function") {
+      return;
+    }
+    let index = 0;
+    const runBatch = (deadline) => {
+      let processed = 0;
+      while (index < layers.length && processed < 80 && (!deadline || deadline.didTimeout || !deadline.timeRemaining || deadline.timeRemaining() > 4)) {
+        addTouchBufferForLayer2(layers[index]);
+        index += 1;
+        processed += 1;
+      }
+      if (index < layers.length) {
+        scheduleIdleTask(runBatch);
+      }
+    };
+    scheduleIdleTask(runBatch);
   }
   async function loadStreetsRuntime({
     map: map2,
@@ -1949,6 +1977,7 @@
     const allStreetFeatures2 = payload.features || [];
     const streetLayersById2 = /* @__PURE__ */ new Map();
     const streetLayersByName2 = /* @__PURE__ */ new Map();
+    const touchBufferQueue = [];
     let gameId = 0;
     const streetsLayer2 = L2.geoJSON(allStreetFeatures2, {
       style(feature) {
@@ -1965,7 +1994,7 @@
         }
         streetLayersByName2.get(normalizedStreetName).push(layer);
         if (isStreetVisibleInCurrentMode3(normalizedStreetName, quartierName)) {
-          addTouchBufferForLayer2(layer);
+          touchBufferQueue.push(layer);
         }
         if (!isTouchDevice) {
           let hoverTimeoutId = null;
@@ -2011,6 +2040,9 @@
         });
       }
     }).addTo(map2);
+    if (isTouchDevice) {
+      addTouchBuffersInBatches(touchBufferQueue, addTouchBufferForLayer2);
+    }
     return {
       allStreetFeatures: allStreetFeatures2,
       streetLayersById: streetLayersById2,
@@ -6316,6 +6348,14 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   }
   async function prepareAndStartNewSession() {
     const zoneMode = getZoneMode();
+    if (zoneMode !== "monuments" && zoneMode !== "quartiers-ville" && !areStreetsReady) {
+      showMessage("Chargement des rues...", "info");
+      const loaded = await loadStreets({ force: true });
+      if (!loaded) {
+        showMessage("Impossible de lancer la session: rues indisponibles.", "error");
+        return;
+      }
+    }
     if ("monuments" === zoneMode && !allMonuments.length) {
       showMessage("Chargement des monuments...", "info");
       await loadMonuments();
@@ -6328,19 +6368,19 @@ Essaie de faire mieux sur camino-ajm.pages.dev`,
   }
   document.addEventListener("DOMContentLoaded", async () => {
     setMapStatus("Chargement", "loading"), initMap(), initUI(), startTimersLoop(), document.body.classList.add("app-ready");
-    const streetsReadyPromise = loadStreets();
     scheduleAfterStartup(() => {
       warmBackendConnection();
       loadStreetInfos();
       initFriendChallengeModeFromUrl();
-    }, 250);
-    streetsReadyPromise.finally(() => {
-      scheduleAfterStartup(() => {
-        loadQuartiers();
-        loadMonuments();
-        loadAllLeaderboards();
-      }, 500);
-    });
+    }, 150);
+    scheduleAfterStartup(() => {
+      loadStreets();
+    }, 650);
+    scheduleAfterStartup(() => {
+      loadQuartiers();
+      loadMonuments();
+      loadAllLeaderboards();
+    }, 1200);
   });
   var infoEl = document.getElementById("street-info");
   function startTimersLoop() {

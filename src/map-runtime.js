@@ -2,6 +2,9 @@ export function addTouchBufferForLayerRuntime(layer, { isTouchDevice, map, L }) 
   if (!isTouchDevice || !map) {
     return;
   }
+  if (layer.touchBuffer) {
+    return;
+  }
 
   const latLngs = layer.getLatLngs();
   if (!latLngs || latLngs.length === 0) {
@@ -25,6 +28,40 @@ export function addTouchBufferForLayerRuntime(layer, { isTouchDevice, map, L }) 
   hitArea.on("mouseout", () => layer.fire("mouseout"));
   hitArea.addTo(map);
   layer.touchBuffer = hitArea;
+}
+
+function scheduleIdleTask(callback) {
+  if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(callback, { timeout: 1000 });
+    return;
+  }
+  setTimeout(() => callback({ timeRemaining: () => 8 }), 16);
+}
+
+function addTouchBuffersInBatches(layers, addTouchBufferForLayer) {
+  if (!layers.length || typeof addTouchBufferForLayer !== "function") {
+    return;
+  }
+
+  let index = 0;
+  const runBatch = (deadline) => {
+    let processed = 0;
+    while (
+      index < layers.length &&
+      processed < 80 &&
+      (!deadline || deadline.didTimeout || !deadline.timeRemaining || deadline.timeRemaining() > 4)
+    ) {
+      addTouchBufferForLayer(layers[index]);
+      index += 1;
+      processed += 1;
+    }
+
+    if (index < layers.length) {
+      scheduleIdleTask(runBatch);
+    }
+  };
+
+  scheduleIdleTask(runBatch);
 }
 
 export async function loadStreetsRuntime({
@@ -81,6 +118,7 @@ export async function loadStreetsRuntime({
   const allStreetFeatures = payload.features || [];
   const streetLayersById = new Map();
   const streetLayersByName = new Map();
+  const touchBufferQueue = [];
   let gameId = 0;
 
   const streetsLayer = L.geoJSON(allStreetFeatures, {
@@ -100,7 +138,7 @@ export async function loadStreetsRuntime({
       streetLayersByName.get(normalizedStreetName).push(layer);
 
       if (isStreetVisibleInCurrentMode(normalizedStreetName, quartierName)) {
-        addTouchBufferForLayer(layer);
+        touchBufferQueue.push(layer);
       }
 
       if (!isTouchDevice) {
@@ -149,6 +187,10 @@ export async function loadStreetsRuntime({
       });
     },
   }).addTo(map);
+
+  if (isTouchDevice) {
+    addTouchBuffersInBatches(touchBufferQueue, addTouchBufferForLayer);
+  }
 
   return {
     allStreetFeatures,
