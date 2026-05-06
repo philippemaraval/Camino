@@ -22,7 +22,12 @@ BACKEND_OUTPUT = os.path.join(PROJECT_DIR, "backend", "data", "marseille_rues_li
 
 # Only keep properties that the game actually uses
 KEEP_PROPERTIES = {"name", "quartier", "highway"}
-EXCLUDED_HIGHWAY_TYPES = {"path", "track"}
+EXCLUDED_TAG_VALUES = {
+    "highway": {"cycleway", "platform", "path", "track"},
+    "footway": {"sidewalk"},
+    "conveying": {"forward", "backward"},
+    "public_transport": {"station"},
+}
 
 # Round coordinates to 5 decimal places (~1.1 m precision)
 COORD_PRECISION = 5
@@ -40,6 +45,10 @@ def round_coords(coords):
 def strip_feature(feature):
     """Strip a single GeoJSON feature to only keep essential data."""
     props = feature.get("properties", {})
+    for key, excluded_values in EXCLUDED_TAG_VALUES.items():
+        if str(props.get(key, "")).strip().lower() in excluded_values:
+            return None
+
     stripped_props = {}
     for key in KEEP_PROPERTIES:
         if key in props and props[key] is not None:
@@ -51,9 +60,6 @@ def strip_feature(feature):
 
     # Skip features without a name
     if "name" not in stripped_props or not stripped_props["name"]:
-        return None
-
-    if stripped_props.get("highway", "").strip().lower() in EXCLUDED_HIGHWAY_TYPES:
         return None
 
     geometry = feature.get("geometry", {})

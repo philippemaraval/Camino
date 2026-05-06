@@ -121,18 +121,37 @@ function normalizeStreetNameForFilter(streetName) {
 }
 
 const WHITELIST = new Set(RAW_WHITELIST.map((entry) => normalizeStreetNameForFilter(entry)));
-const EXCLUDED_HIGHWAY_TYPES = new Set(["platform", "path", "track"]);
+const EXCLUDED_TAG_VALUES = new Map([
+  ["highway", new Set(["cycleway", "platform", "path", "track"])],
+  ["footway", new Set(["sidewalk"])],
+  ["conveying", new Set(["forward", "backward"])],
+  ["public_transport", new Set(["station"])],
+]);
 
-function shouldKeepStreetForGame({ name, highway } = {}) {
+function normalizeTagValue(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function shouldExcludeOsmTags(tags = {}) {
+  for (const [key, excludedValues] of EXCLUDED_TAG_VALUES.entries()) {
+    if (excludedValues.has(normalizeTagValue(tags[key]))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function shouldKeepStreetForGame(input = {}) {
+  const tags = input.properties || input;
+  const { name } = tags;
   const normalizedName = normalizeStreetNameForFilter(name);
   if (!normalizedName) {
     return false;
   }
 
-  const normalizedHighway = String(highway || "")
-    .trim()
-    .toLowerCase();
-  if (EXCLUDED_HIGHWAY_TYPES.has(normalizedHighway)) {
+  if (shouldExcludeOsmTags(tags)) {
     return false;
   }
 
@@ -168,5 +187,6 @@ function shouldKeepStreetForGame({ name, highway } = {}) {
 
 module.exports = {
   normalizeStreetNameForFilter,
+  shouldExcludeOsmTags,
   shouldKeepStreetForGame,
 };
