@@ -651,7 +651,8 @@ function resolveDailyImageUrl(date, streetName) {
         const fileName = `${date}__${slug}.${ext}`;
         const absolutePath = path.join(DAILY_IMAGES_ABSOLUTE_DIR, fileName);
         if (fs.existsSync(absolutePath)) {
-            return `${DAILY_IMAGES_PUBLIC_DIR}/${fileName}`;
+            const version = Math.floor(fs.statSync(absolutePath).mtimeMs);
+            return `${DAILY_IMAGES_PUBLIC_DIR}/${fileName}?v=${version}`;
         }
     }
 
