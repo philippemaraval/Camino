@@ -1,13 +1,13 @@
 {
-  "lastSyncedAt": "2026-05-05T11:13:26.905Z",
+  "lastSyncedAt": "2026-05-13T06:59:55.487Z",
   "generatedBy": "scripts/sync_osm.js",
   "overpassEndpoints": [
     "https://overpass-api.de/api/interpreter",
     "https://lz4.overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter"
   ],
-  "overpassSelectedEndpoint": "https://lz4.overpass-api.de/api/interpreter",
-  "overpassOsmBase": "2026-05-05T11:12:01Z",
+  "overpassSelectedEndpoint": "https://overpass-api.de/api/interpreter",
+  "overpassOsmBase": "2026-05-13T06:58:03Z",
   "overpassStatus": [
     {
       "endpoint": "https://overpass-api.de/api/interpreter",
@@ -25,12 +25,12 @@
       "endpoint": "https://overpass.kumi.systems/api/interpreter",
       "host": "overpass.kumi.systems",
       "osmBase": null,
-      "statusError": "Timeout 10000ms"
+      "statusError": null
     }
   ],
-  "overpassElements": 111718,
-  "rawMapSegments": 15988,
-  "keptMapSegments": 14813,
-  "keptSegments": 14813,
-  "uniqueStreets": 5164
+  "overpassElements": 111139,
+  "rawMapSegments": 15873,
+  "keptMapSegments": 14859,
+  "keptSegments": 14859,
+  "uniqueStreets": 5168
 }
